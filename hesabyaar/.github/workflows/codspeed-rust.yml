@@ -1,0 +1,83 @@
+name: CodSpeed Benchmarks (Rust)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Allow running the benchmarks manually from the Actions tab.
+  workflow_dispatch:
+
+permissions:
+  contents: read # required for actions/checkout
+  id-token: write # required for OIDC authentication with CodSpeed
+
+jobs:
+  benchmarks:
+    name: Run Rust benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RUSTFLAGS: "-C link-arg=-fuse-ld=lld"
+    # `id-token: write` (needed for CodSpeed OIDC auth) is stripped by GitHub on
+    # pull requests from forked repositories, which would make this job fail.
+    # Only run on pushes and same-repo PRs; community-fork PRs skip benchmarking.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: "rust"
+
+      - name: Cache cargo-codspeed binary
+        id: cache
+        # `cargo install` compiles from source on every run. Cache the installed
+        # binary (keyed on version) so CI doesn't recompile the tool each time.
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ~/.cargo/bin/cargo-codspeed
+          key: cargo-codspeed-5.0.1 # gitleaks:allow
+
+      - name: Install lld linker
+        run: sudo apt-get update && DEBIAN_FRONTEND=noninteractive sudo apt-get install -y lld
+
+      - name: Install cargo-codspeed
+        # cargo-codspeed sets CODSPEED_CARGO_WORKSPACE_ROOT and instruments the
+        # shim. Without it, cargo bench panics with the NotPresent env error.
+        # Pinned + --locked for reproducible installs; skipped when cached.
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: cargo install cargo-codspeed --version 5.0.1 --locked
+
+      - name: Run benchmarks
+        uses: CodSpeedHQ/action@373d6868929f444bc08d901fd0eb0ad52a8875ea # v5.2.1
+        with:
+          # Simulation mode: deterministic CPU simulation, <1% variance,
+          # automatic flamegraphs. Best for the CPU-bound Rust core.
+          mode: simulation
+          # The `codspeed-criterion-compat` shim is injected here (online CI
+          # only) by renaming it to `criterion`, so the existing criterion
+          # benchmark compiles against the instrumented shim. It is intentionally
+          # NOT a permanent dependency in Cargo.toml: doing so breaks offline
+          # local builds (crates.io is unreachable in the dev sandbox), which would
+          # block `./gradlew :app:testDebugUnitTest` from assembling the Rust .so.
+          # `cargo codspeed run` (not plain `cargo bench`) is required so the
+          # shim runs under the instrumented harness that defines
+          # CODSPEED_CARGO_WORKSPACE_ROOT.
+          # Pinned to major v5 to match the cargo-codspeed CLI and CodSpeed runner
+          # versions. The compat shim falls back to running as plain Criterion when
+          # the CodSpeed runner is unavailable (e.g. local builds, or automation
+          # PRs where `id-token: write` is stripped).
+          run: |
+            cargo remove criterion --dev -p hesabyar-core
+            cargo add codspeed-criterion-compat@5 --rename criterion --dev -p hesabyar-core
+            cargo codspeed build -p hesabyar-core -m simulation
+            cargo codspeed run -p hesabyar-core
+          working-directory: rust

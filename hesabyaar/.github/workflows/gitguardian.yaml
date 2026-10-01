@@ -1,0 +1,41 @@
+name: GitGuardian scan
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  scanning:
+    name: GitGuardian scan
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+
+    env:
+      HAS_GITGUARDIAN_KEY: ${{ secrets.GITGUARDIAN_API_KEY != '' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0 # fetch all history so multiple commits can be scanned
+          # This job only reads the tree; the ggshield action authenticates with
+          # GITGUARDIAN_API_KEY, never with the checkout credential.
+          persist-credentials: false
+
+      - name: GitGuardian scan
+        # GitHub does not expose repository secrets to Dependabot-triggered
+        # runs, so GITGUARDIAN_API_KEY arrives empty and ggshield exits 1 with
+        # "Invalid GitGuardian API key". That fails the check on every
+        # Dependabot PR regardless of what the PR changes. Skip instead of
+        # failing; the push-to-main trigger still scans with a real key.
+        if: env.HAS_GITGUARDIAN_KEY == 'true'
+        uses: GitGuardian/ggshield/actions/secret@94571a547a8a2f314a094d142729ee88c6ed0a3b # v1.55.0
+        env:
+          GITHUB_PUSH_BEFORE_SHA: ${{ github.event.before }}
+          GITHUB_PUSH_BASE_SHA: ${{ github.event.before }}
+          GITHUB_PULL_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          GITHUB_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GITGUARDIAN_API_KEY: ${{ secrets.GITGUARDIAN_API_KEY }}

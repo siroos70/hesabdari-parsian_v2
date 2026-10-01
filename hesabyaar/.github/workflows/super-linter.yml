@@ -1,0 +1,74 @@
+name: Super Linter
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+      - '.github/actions/**'
+      - '.github/scripts/**'
+      - 'scripts/**'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/**'
+      - '.github/actions/**'
+      - '.github/scripts/**'
+      - 'scripts/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Super-Linter runs many linters in parallel. Each one needs room.
+jobs:
+  super-linter:
+    name: Run Super-Linter
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      # Clone the repository.
+      contents: read
+      # Report the result as a commit status check.
+      statuses: write
+      # Post the summary comment on the pull request.
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # Super-Linter needs the full history to find changed files.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Super-Linter
+        uses: super-linter/super-linter@4ce20838b8ab83717e78138c5b3a1407148e0918 # v8.7.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+          # Check only the files this pull request changes. The default
+          # scans the whole repository on every run.
+          VALIDATE_ALL_CODEBASE: false
+
+          # Enabling any VALIDATE_ flag turns every unlisted linter off.
+          # Each entry below is a deliberate choice for this repository.
+          VALIDATE_BASH: true
+          VALIDATE_BASH_EXEC: true
+          VALIDATE_YAML: true
+          VALIDATE_GITHUB_ACTIONS: true
+          VALIDATE_GITHUB_ACTIONS_ZIZMOR: true
+          VALIDATE_GITLEAKS: true
+          VALIDATE_DOCKERFILE_HADOLINT: true
+          VALIDATE_CLANG_FORMAT: true
+
+          # The repository documents in Persian. The markdown linter
+          # reports false line-length errors on right-to-left text, so
+          # exclude Markdown files from this workflow. Workflow files
+          # stay linted through VALIDATE_GITHUB_ACTIONS below.
+          FILTER_REGEX_EXCLUDE: '.*\.md'
+
+          # Report a job summary table instead of a large PR comment.
+          ENABLE_GITHUB_ACTIONS_STEP_SUMMARY: true
+          ENABLE_GITHUB_PULL_REQUEST_SUMMARY_COMMENT: false
+          LOG_LEVEL: 'NOTICE'

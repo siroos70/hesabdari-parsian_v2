@@ -1,0 +1,100 @@
+# IDE
+*.iml
+/.idea/
+/.vscode/
+.DS_Store
+*.hprof
+hs_err_pid*
+
+# Gradle
+.gradle/
+**/build/
+
+# Local configuration
+/local.properties
+local.properties
+.env
+.env.local
+.env.*
+!.env.example
+
+# Android specific
+/captures
+.externalNativeBuild/
+.cxx/
+debug.keystore
+*.keystore
+*.jks
+my-upload-key.jks
+google-services.json
+
+# Kotlin
+.kotlin
+keystore-backups/my-upload-key.jks.bak
+
+# Claude Code
+.claude/
+.workbuddy-ai/
+
+# ZCode
+.zcode/
+
+# Serena
+.serena/
+
+# AI Agents Skills & Prompts
+**/skill.md
+.agents/
+skills-lock.json
+.mimocode/
+# Local AI-tool skill repos committed by accident (nested git repos under literal ~ dir)
+/~/
+docs/uiplan.md
+.superpowers/
+docs/superpowers/
+
+# Python
+__pycache__/
+*.pyc
+
+# Rust
+/rust/target/
+**/target/
+
+# Rust build artifacts (cargo-ndk prebuilt libraries)
+app/src/main/jniLibs/
+
+# Native binary extensions (safety net for artifacts outside target/)
+*.so
+*.dll
+*.dylib
+*.a
+*.o
+*.pdb
+
+# Generated UniFFI intermediate files
+rust/uniffi/
+
+# Gradle-generated Rust core version (run :app:syncCoreVersion to regenerate)
+rust/hesabyar-core/src/generated/
+
+# Generated UniFFI bindings (run ./gradlew :app:generateAndFixBindings or :generateRustBindings to regenerate)
+app/src/main/java/io/github/mojri/hesabyar/rust/hesabyar_core.kt
+app/src/main/java/io/github/mojri/hesabyar/rust/generated/
+.serena/
+.gh_review_state.json
+.kilocode/
+.kilo/
+# Graphify (generated knowledge graph — local only)
+graphify-out/
+
+# SQLite temp files (e.g. .freebuff from database tools)
+.freebuff/
+
+# Code coverage reports (cargo-llvm-cov, node --experimental-test-coverage)
+*.info
+*.lcov
+coverage*.lcov
+junit*.xml
+*-junit.xml
+

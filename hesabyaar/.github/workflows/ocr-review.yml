@@ -1,0 +1,100 @@
+# OpenCodeReview - automatic PR review.
+# Re-runs on a comment starting with '/open-code-review' or '@open-code-review'.
+#
+# Set in Settings -> Secrets and variables -> Actions:
+#   Variable  OCR_LLM_URL            LLM API endpoint (e.g. https://api.openai.com/v1/chat/completions)
+#   Secret    OCR_LLM_AUTH_TOKEN     LLM auth token
+#   Variable  OCR_LLM_MODEL          model name
+#   Variable  OCR_LLM_USE_ANTHROPIC  'true' for Anthropic models, 'false' otherwise
+#
+# Optional fallback (issue #206 phase 2) - when set and the primary job
+# FAILS, the review is retried once through an Anthropic-configured gateway:
+#   Variable  OCR_FALLBACK_URL       fallback LLM API endpoint
+#   Secret    OCR_FALLBACK_AUTH_TOKEN fallback auth token
+#   Variable  OCR_FALLBACK_MODEL     fallback model name (Anthropic-style)
+#
+# The review job itself lives in ocr-review-job.yml (reusable workflow), so
+# both attempts share one audited security pattern.
+#
+# The Action is pinned to the v1.9.9 release commit, and the OCR npm package
+# is pinned to the same release via ocr_version (the Action default is
+# 'latest'). On pull_request_target, the Action derives base_ref/head_sha from
+# the event payload itself, so no extra API call is needed for that path
+# (action.yml "Resolve PR refs" step).
+#
+# NOTE: the issue_comment authorization predicate below appears twice by
+# design - in the concurrency expression and in the job if. GitHub Actions has
+# no shared-expression mechanism between the two, and a simpler group would let
+# any unrelated comment cancel an in-progress review. Keep both blocks identical.
+
+name: OpenCodeReview PR Review
+
+concurrency:
+  group: >-
+    ${{
+      (
+        github.event_name == 'pull_request_target'
+        || (
+          github.event_name == 'issue_comment'
+          && github.event.issue.pull_request
+          && github.event.comment.user.type != 'Bot'
+          && (
+            github.event.comment.author_association == 'MEMBER'
+            || github.event.comment.author_association == 'OWNER'
+            || github.event.comment.author_association == 'COLLABORATOR'
+          )
+          && (
+            startsWith(github.event.comment.body, '/open-code-review')
+            || startsWith(github.event.comment.body, '@open-code-review')
+          )
+        )
+      )
+      && format('ocr-{0}', github.event.pull_request.number || github.event.issue.number)
+      || format('noop-{0}', github.run_id)
+    }}
+  cancel-in-progress: true
+
+on:
+  # pull_request_target keeps variables available for fork PRs.
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  # The summary archive (phase 3) edits PR conversation comments via
+  # issues.updateComment, which GitHub models as issue comments; without this
+  # scope the edit is rejected and archiving silently no-ops.
+  issues: write
+
+jobs:
+  # Primary attempt with the configured OpenAI-compatible gateway.
+  code-review:
+    # actionlint:ignore-next-line cache-call-unrestricted -- ocr-review-job does not access actions cache
+    uses: ./.github/workflows/ocr-review-job.yml
+    with:
+      llm_url: ${{ vars.OCR_LLM_URL }}
+      llm_model: ${{ vars.OCR_LLM_MODEL }}
+      use_anthropic: ${{ vars.OCR_LLM_USE_ANTHROPIC == 'true' }}
+    secrets:
+      auth_token: ${{ secrets.OCR_LLM_AUTH_TOKEN }}
+
+  # Issue #206 phase 2: if the primary LLM gateway fails the whole job, retry
+  # once through an Anthropic-configured fallback. Skipped entirely (not just
+  # no-op) while OCR_FALLBACK_URL is unset, so repos without a fallback
+  # configured keep today's behavior. The reusable definition guarantees the
+  # identical security pattern; per-run summary tags keep the two attempts'
+  # comments distinguishable.
+  review-fallback:
+    needs: code-review
+    if: failure() && vars.OCR_FALLBACK_URL != '' && vars.OCR_FALLBACK_MODEL != ''
+    # actionlint:ignore-next-line cache-call-unrestricted -- ocr-review-job does not access actions cache
+    uses: ./.github/workflows/ocr-review-job.yml
+    with:
+      llm_url: ${{ vars.OCR_FALLBACK_URL }}
+      llm_model: ${{ vars.OCR_FALLBACK_MODEL }}
+      use_anthropic: true
+    secrets:
+      auth_token: ${{ secrets.OCR_FALLBACK_AUTH_TOKEN }}

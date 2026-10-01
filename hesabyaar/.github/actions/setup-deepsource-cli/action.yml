@@ -1,0 +1,28 @@
+name: "Setup DeepSource CLI"
+description: "Downloads and verifies pinned DeepSource CLI binary with SHA256 verification"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Download and verify DeepSource CLI
+      shell: bash
+      # The GITHUB_PATH entry is a fixed path under RUNNER_TEMP. The binary
+      # is checksum verified before the path is registered.
+      run: | # zizmor: ignore[github-env]
+        VERSION="2.0.55"
+        EXPECTED_SHA256="3d8264fef2487b39a7b9efd801d06bce8d04fe1ed8d5b5f13a876cd31e5a680d"
+        ARCHIVE="deepsource_${VERSION}_linux_amd64.tar.gz"
+        URL="https://cli.deepsource.com/build/${ARCHIVE}"
+
+        mkdir -p "${RUNNER_TEMP}/deepsource-bin"
+        curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 10 --max-time 60 -o "${RUNNER_TEMP}/${ARCHIVE}" "${URL}"
+        ACTUAL_SHA256=$(sha256sum "${RUNNER_TEMP}/${ARCHIVE}" | cut -d' ' -f1)
+
+        if [ "${ACTUAL_SHA256}" != "${EXPECTED_SHA256}" ]; then
+          echo "::error::DeepSource CLI checksum mismatch! Expected: ${EXPECTED_SHA256}, Got: ${ACTUAL_SHA256}"
+          exit 1
+        fi
+
+        tar -xzf "${RUNNER_TEMP}/${ARCHIVE}" -C "${RUNNER_TEMP}/deepsource-bin"
+        chmod +x "${RUNNER_TEMP}/deepsource-bin/deepsource"
+        echo "${RUNNER_TEMP}/deepsource-bin" >> "$GITHUB_PATH"

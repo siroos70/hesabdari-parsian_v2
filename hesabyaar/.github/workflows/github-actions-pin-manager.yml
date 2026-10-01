@@ -1,0 +1,106 @@
+# GitHub Actions Pin Manager.
+#
+# Keeps every third-party `uses:` reference on a verified immutable commit
+# SHA with a synchronized version comment.
+#
+# Two scheduled modes:
+#   - security-scan: daily. Proposes only advisory-driven updates.
+#   - weekly-update: weekly. Proposes all same-major stable updates.
+#
+# Update-loop policy: this workflow has no push or pull_request trigger.
+# Commits it pushes to the ci/pin-* branches can never re-trigger it. Other
+# CI workflows still run on the maintenance pull requests as usual.
+#
+# Auto-merge is disabled by policy. A human reviews and merges every PR.
+#
+# Token note: GitHub suppresses workflow runs that the built-in GITHUB_TOKEN
+# triggers. These jobs therefore prefer the WORKFLOW_PAT secret (the same
+# token as the release workflow), whose events DO start other CI. If that
+# secret is absent, they fall back to GITHUB_TOKEN and the maintenance PRs
+# will not start CI automatically.
+
+name: GitHub Actions Pin Manager
+
+on:
+  schedule:
+    # Daily security scan, 05:17 UTC. This cron string must stay identical
+    # to the literal in the security-scan job `if:` guard, or that job
+    # silently never runs on schedule.
+    - cron: "17 5 * * *"
+    # Weekly general update check, Monday 06:23 UTC. Same coupling rule with
+    # the weekly-update job guard.
+    - cron: "23 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Which scan to run"
+        required: true
+        default: "weekly"
+        type: choice
+        options:
+          - weekly
+          - security
+
+permissions:
+  contents: read
+
+jobs:
+  security-scan:
+    name: Daily security scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Keep this cron literal identical to the first entry in on.schedule.
+    if: >-
+      (github.event_name == 'schedule' && github.event.schedule == '17 5 * * *') ||
+      (github.event_name == 'workflow_dispatch' && inputs.mode == 'security')
+    concurrency:
+      group: pin-manager-security
+      cancel-in-progress: false
+    permissions:
+      # contents: write pushes and force-updates the ci/pin-security branch
+      # through the Git data API. No other write scope is used.
+      contents: write
+      # pull-requests: write creates or updates the single security PR.
+      pull-requests: write
+      # NOTE: this block limits only the built-in GITHUB_TOKEN. The
+      # WORKFLOW_PAT secret keeps its own grant. Configure it as a
+      # fine-grained PAT with Contents and Pull requests on this
+      # repository only, so its blast radius matches this block.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run security pin scan
+        env:
+          GITHUB_TOKEN: ${{ secrets.WORKFLOW_PAT || secrets.GITHUB_TOKEN }}
+        run: node scripts/github-actions-pin-manager.mjs --apply --mode=security
+
+  weekly-update:
+    name: Weekly stable update
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Keep this cron literal identical to the second entry in on.schedule.
+    if: >-
+      (github.event_name == 'schedule' && github.event.schedule == '23 6 * * 1') ||
+      (github.event_name == 'workflow_dispatch' && inputs.mode == 'weekly')
+    concurrency:
+      group: pin-manager-weekly
+      cancel-in-progress: false
+    permissions:
+      # contents: write pushes and force-updates the ci/pin-updates branch
+      # through the Git data API. No other write scope is used.
+      contents: write
+      # pull-requests: write creates or updates the single maintenance PR.
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run weekly pin update
+        env:
+          GITHUB_TOKEN: ${{ secrets.WORKFLOW_PAT || secrets.GITHUB_TOKEN }}
+        run: node scripts/github-actions-pin-manager.mjs --apply --mode=weekly

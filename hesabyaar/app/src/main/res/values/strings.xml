@@ -1,0 +1,146 @@
+<resources>
+    <string name="app_name">حسابیار ایران</string>
+    <string name="expense_description_with_subject">%1$s (%2$s)</string>
+    <string name="expense_description_miscellaneous">هزینه متفرقه (%1$s)</string>
+    <string name="cancel_label">انصراف</string>
+    <string name="loan_type_debtor">من قرض دادم</string>
+    <string name="loan_type_creditor">من قرض گرفتم</string>
+    <string name="loan_amount_too_large">مبلغ بیش از حد بزرگ است</string>
+    <string name="currency_unit">تومان</string>
+    <string name="category_type_expense">هزینه</string>
+    <string name="category_type_income">درآمد</string>
+    <string name="category_type_both">هر دو</string>
+    <string name="category_type_unknown">نامشخص</string>
+
+    <!-- ManualTransactionDialog -->
+    <string name="select_source_account">لطفاً حساب مبدا را انتخاب کنید</string>
+    <string name="select_destination_account">لطفاً حساب مقصد را انتخاب کنید</string>
+    <string name="source_dest_accounts_cannot_be_same">حساب مبدا و مقصد نمی‌توانند یکسان باشند</string>
+
+    <!-- AccountSelector -->
+    <string name="all_accounts_option">همه حساب‌ها</string>
+
+    <!-- TransactionDetailDialog -->
+    <string name="transaction_type_transfer">انتقال وجه</string>
+
+    <!-- AccountBreakdownCard -->
+    <string name="expense_distribution_by_account">توزیع هزینه‌ها بر اساس حساب</string>
+
+    <!-- AccountBalanceCard -->
+    <string name="account_selected">حساب %1$s، انتخاب‌شده</string>
+    <string name="account_unselected">حساب %1$s</string>
+
+    <!-- AccountManagementScreen -->
+    <string name="add_account">افزودن حساب</string>
+
+    <!-- Export passphrase dialog (SettingsScreen) -->
+    <string name="passphrase_export_title">رمزگذاری اطلاعات حساس</string>
+    <string name="passphrase_export_warning">اگر این رمز را فراموش کنید، اطلاعات کارت/حساب/شبا در این بکاپ قابل بازیابی نخواهند بود.</string>
+    <string name="passphrase_label">رمز عبور</string>
+    <string name="passphrase_confirm_label">تأیید رمز عبور</string>
+    <string name="passphrase_mismatch_error">رمز عبور مطابقت ندارد</string>
+    <string name="passphrase_encrypt_and_save">رمزگذاری و ذخیره</string>
+    <string name="passphrase_save_without_encryption">ذخیره بدون رمز</string>
+
+    <!-- Import passphrase dialog (ImportPassphraseDialog) -->
+    <string name="passphrase_import_title">رمزگشایی پشتیبان</string>
+    <string name="passphrase_import_body">این پشتیبان رمزگذاری شده است. لطفاً رمز عبور را وارد کنید:</string>
+    <string name="passphrase_decrypt">رمزگشایی</string>
+    <string name="decrypt_in_progress_label">در حال رمزگشایی پشتیبان</string>
+    <string name="passphrase_wrong_or_corrupt">رمز عبور اشتباه است یا فایل بکاپ خراب است</string>
+
+    <!-- BackupViewModel -->
+    <string name="error_encrypting_backup">خطا در رمزگذاری پشتیبان: %s</string>
+    <string name="error_preparing_backup">خطا در تهیه پشتیبان: %s</string>
+    <string name="error_backup_data_not_ready">خطا: داده پشتیبان آماده نیست</string>
+    <string name="error_saving_backup">خطا در ذخیره پشتیبان: %s</string>
+    <string name="error_processing_backup_json">خطا در پردازش JSON پشتیبان: %s</string>
+    <string name="backup_saved_success">پشتیبان با موفقیت ذخیره شد.</string>
+    <string name="restore_success_replace">بازیابی کامل با موفقیت انجام شد. %1$d تراکنش، %2$d وام، %3$d قسط، %4$d دسته‌بندی، %5$d وام بانکی، %6$d حساب بازیابی شد.</string>
+    <string name="export_summary_counts">%1$d تراکنش، %2$d وام، %3$d قسط، %4$d دسته‌بندی، %5$d وام بانکی، %6$d حساب.</string>
+    <string name="error_reading_backup_file">خطا در خواندن فایل پشتیبان: %s</string>
+    <string name="error_parsing_backup_file">خطا در تجزیه فایل پشتیبان: %s</string>
+    <string name="error_invalid_backup_structure">خطا در تجزیه فایل پشتیبان: ساختار فایل نامعتبر است</string>
+    <string name="error_backup_encryption_incomplete">فایل پشتیبان رمزگذاری‌شده است اما اطلاعات رمزنگاری آن ناقص است</string>
+
+    <!-- BackupImportCoordinator -->
+    <string name="restore_success_merge">ادغام پشتیبان با موفقیت انجام شد.</string>
+    <string name="error_backup_file_access">خطا در دسترسی به فایل پشتیبان: %s</string>
+    <string name="error_backup_file_access_denied">دسترسی به فایل پشتیبان غیرمجاز است: %s</string>
+    <string name="error_backup_invalid_settings">تنظیمات پشتیبان نامعتبر است: %s</string>
+    <string name="error_restore_generic">خطا در بازگردانی پشتیبان: %s</string>
+    <string name="error_unknown">خطای ناشناخته</string>
+    <string name="error_io">خطای ورودی/خروجی</string>
+    <string name="error_unspecified">خطای نامشخص</string>
+
+    <!-- BackupJsonValidator (Kotlin fallback validation messages) -->
+    <string name="backup_validation_version_invalid">نسخه پشتیبان نامعتبر است</string>
+    <string name="backup_validation_app_version_invalid">نسخه برنامه پشتیبان نامعتبر است</string>
+    <string name="backup_validation_timestamp_invalid">زمان تهیه پشتیبان نامعتبر است</string>
+    <string name="backup_validation_tx_amount_invalid">مبلغ تراکنش #%1$d نامعتبر است</string>
+    <string name="backup_validation_tx_date_invalid">تاریخ تراکنش #%1$d نامعتبر است</string>
+    <string name="backup_validation_tx_category_invalid">دسته‌بندی تراکنش #%1$d نامعتبر است</string>
+    <string name="backup_validation_loan_person_blank">نام شخص وام #%1$d خالی است</string>
+    <string name="backup_validation_loan_date_invalid">تاریخ وام #%1$d نامعتبر است</string>
+    <string name="backup_validation_loan_original_invalid">مبلغ اولیه وام #%1$d نامعتبر است</string>
+    <string name="backup_validation_loan_remaining_invalid">مبلغ باقی‌مانده وام #%1$d نامعتبر است</string>
+    <string name="backup_validation_installment_title_blank">عنوان قسط #%1$d خالی است</string>
+    <string name="backup_validation_installment_amount_invalid">مبلغ قسط #%1$d نامعتبر است</string>
+    <string name="backup_validation_installment_due_invalid">تاریخ سررسید قسط #%1$d نامعتبر است</string>
+    <string name="backup_validation_category_name_blank">نام دسته‌بندی #%1$d خالی است</string>
+    <string name="backup_validation_payment_amount_invalid">مبلغ پرداخت #%1$d نامعتبر است</string>
+    <string name="backup_validation_payment_date_invalid">تاریخ پرداخت #%1$d نامعتبر است</string>
+    <string name="backup_validation_payment_loan_id_invalid">شناسه وام پرداخت #%1$d نامعتبر است</string>
+    <string name="backup_validation_bankloan_name_blank">نام بانک وام #%1$d خالی است</string>
+    <string name="backup_validation_bankloan_received_invalid">مبلغ دریافتی وام #%1$d نامعتبر است</string>
+    <string name="backup_validation_bankloan_installment_count_invalid">تعداد اقساط وام #%1$d نامعتبر است</string>
+    <string name="backup_validation_bankloan_monthly_invalid">مبلغ قسط ماهانه وام #%1$d نامعتبر است</string>
+    <string name="backup_validation_bankloan_start_invalid">تاریخ شروع وام #%1$d نامعتبر است</string>
+    <string name="backup_validation_bankloan_repayable_invalid">مبلغ کل بازپرداخت وام #%1$d نامعتبر است</string>
+    <string name="backup_validation_bankloan_repayable_overflow">مبلغ کل بازپرداخت وام #%1$d در محاسبه سرریز می‌کند</string>
+    <string name="backup_validation_bankloan_repayable_mismatch">مبلغ کل بازپرداخت وام #%1$d با حاصل ضرب مبلغ قسط ماهانه در تعداد اقساط برابر نیست</string>
+    <string name="backup_validation_bankloan_repayable_below_received">مبلغ کل بازپرداخت وام #%1$d نباید کمتر از مبلغ دریافتی باشد</string>
+    <string name="backup_validation_bankloan_interest_mismatch">سود وام #%1$d با مبلغ کل بازپرداخت منهای مبلغ دریافتی برابر نیست</string>
+    <string name="backup_validation_account_name_blank">نام حساب #%1$d خالی است</string>
+    <string name="backup_validation_person_name_blank">نام شخص #%1$d خالی است</string>
+    <string name="backup_validation_person_normalized_blank">نام یکتای شخص #%1$d خالی است</string>
+    <string name="backup_validation_person_duplicate">نام یکتای شخص #%1$d تکراری است</string>
+    <string name="backup_validation_person_duplicate_id">شناسه شخص %1$s تکراری است</string>
+
+    <!-- BackupReferenceValidator (cross-reference validation errors) -->
+    <string name="backup_error_duplicate_account_id">حساب تکراری با شناسه %1$s</string>
+    <string name="backup_error_transaction_invalid_account">تراکنش #%1$d به حساب مبدا ناموجود %2$s ارجاع می‌دهد</string>
+    <string name="backup_error_transaction_invalid_destination_account">تراکنش #%1$d به حساب مقصد ناموجود %2$s ارجاع می‌دهد</string>
+    <string name="backup_error_transaction_invalid_legacy_account">تراکنش #%1$d به حساب غیرقدیمی %2$s ارجاع می‌دهد (فهرست حساب‌ها خالی است)</string>
+    <string name="backup_error_transaction_invalid_legacy_destination_account">تراکنش #%1$d به حساب مقصد غیرقدیمی %2$s ارجاع می‌دهد (فهرست حساب‌ها خالی است)</string>
+    <string name="backup_error_transfer_no_destination">تراکنش انتقالی #%1$d حساب مقصد ندارد</string>
+    <string name="backup_error_transfer_same_source_destination">تراکنش انتقالی #%1$d مبدا و مقصد یکسان دارند</string>
+    <string name="backup_error_transaction_invalid_category">تراکنش #%1$d به دسته‌بندی ناموجود %2$s ارجاع می‌دهد</string>
+    <string name="backup_error_payment_invalid_loan">پرداخت #%1$d به وام ناموجود %2$s ارجاع می‌دهد</string>
+    <string name="backup_error_loan_invalid_person">وام #%1$d به شخص ناموجود %2$s ارجاع می‌دهد</string>
+    <string name="backup_error_transaction_invalid_person">تراکنش #%1$d به شخص ناموجود %2$s ارجاع می‌دهد</string>
+
+    <!-- AccountManagementScreen delete dialogs -->
+    <string name="account_delete_title">حذف حساب</string>
+    <string name="delete_label">حذف</string>
+    <string name="account_delete_confirm_message">آیا از حذف حساب «%1$s» اطمینان دارید؟</string>
+    <string name="account_delete_not_allowed_title">امکان حذف حساب</string>
+    <string name="account_delete_transaction_warning_message">حساب «%1$s» دارای تراکنش‌های فعال است و امکان حذف آن وجود ندارد. برای غیرفعال کردن حساب، از گزینه آرشیو استفاده کنید.</string>
+    <string name="account_delete_last_account_warning_message">حساب «%1$s» آخرین حساب است و قابل حذف نیست. حداقل یک حساب باید همیشه باقی بماند.</string>
+    <string name="account_delete_transaction_count_error">حساب «%1$s» دارای %2$d تراکنش است و قابل حذف نیست</string>
+    <string name="account_delete_last_active_account_error">حساب «%1$s» آخرین حساب فعال است و قابل حذف نیست</string>
+    <string name="account_delete_last_active_account_warning_message">این تنها حساب فعال شماست و نمی‌توان آن را حذف کرد. حساب‌های آرشیوشده وجود دارند ولی قابل استفاده نیستند.</string>
+    <string name="understood_label">متوجه شدم</string>
+
+    <!-- ReportsScreen -->
+    <string name="account_content_description">حساب %1$s</string>
+
+    <!-- AccountManagementScreen -->
+    <string name="balance_invalid_amount">مقدار نامعتبر</string>
+    <string name="balance_amount_label">مبلغ ریال</string>
+
+    <!-- AccountViewModel runGuarded error messages -->
+    <string name="account_operation_error">خطا در %1$s: %2$s</string>
+    <string name="database_error_fallback">خطای پایگاه داده</string>
+    <string name="unknown_error_fallback">خطای ناشناخته</string>
+</resources>

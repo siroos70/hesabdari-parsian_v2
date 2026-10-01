@@ -1,0 +1,116 @@
+name: Rust Lint
+
+on:
+  push:
+    branches: [main, "feature/*"]
+    paths:
+      - 'rust/**'
+      - '.github/workflows/rust-lint.yml'
+  pull_request:
+    paths:
+      - 'rust/**'
+      - '.github/workflows/rust-lint.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Format, Clippy, Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DEEPSOURCE_DSN: ${{ secrets.DEEPSOURCE_DSN }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Rust
+        # rust-toolchain.toml pins the channel to "stable" and lists clippy
+        # and rustfmt as components. The components input keeps them explicit
+        # for this job.
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+        with:
+          components: clippy, rustfmt, llvm-tools-preview
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: "rust"
+
+      - name: Check formatting
+        working-directory: rust
+        run: cargo fmt --check
+
+      - name: Run Clippy
+        working-directory: rust
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Install cargo-llvm-cov and cargo-nextest
+        uses: taiki-e/install-action@7623a79cdfecb99d681017af368ca353d9f49bb5 # v2.87.19
+        with:
+          tool: cargo-llvm-cov,cargo-nextest
+
+      - name: Run tests and generate coverage
+        working-directory: rust
+        run: cargo llvm-cov nextest --workspace --lcov --output-path lcov.info
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: rust/lcov.info
+          flags: rust
+          fail_ci_if_error: false
+
+      - name: Upload coverage to Coveralls
+        uses: coverallsapp/github-action@8d6379e14d29928660c4ba802d8e85393440b329 # v2.3.8
+        continue-on-error: true
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repo-token: ${{ secrets.COVERALLS_REPO_TOKEN }}
+          file: rust/lcov.info
+          format: lcov
+          flag-name: rust
+
+      - name: Upload coverage to Qlty Cloud
+        uses: qltysh/qlty-action/coverage@c9b09987143d1e4ac955f4803c7bea742102feb5 # v2.4.0
+        continue-on-error: true
+        with:
+          token: ${{ secrets.QLTY_COVERAGE_TOKEN }}
+          files: rust/lcov.info
+          add-prefix: rust
+
+      - name: Set up DeepSource CLI
+        id: setup-deepsource
+        if: ${{ env.DEEPSOURCE_DSN != '' }}
+        continue-on-error: true
+        uses: ./.github/actions/setup-deepsource-cli
+
+      - name: Upload coverage to DeepSource
+        if: ${{ env.DEEPSOURCE_DSN != '' && steps.setup-deepsource.outcome == 'success' }}
+        continue-on-error: true
+        env:
+          DEEPSOURCE_DSN: ${{ secrets.DEEPSOURCE_DSN }}
+        run: |
+          sed -e 's|^SF:hesabyar-core/|SF:rust/hesabyar-core/|' rust/lcov.info > rust/lcov.prefixed.info
+          deepsource report --analyzer test-coverage --key rust --value-file rust/lcov.prefixed.info
+
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3 # v1.2.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: rust/junit.xml
+          fail_ci_if_error: false
+
+      - name: Upload test results to BuildPulse
+        if: always()
+        uses: BuildPulseLLC/test-reporter-action@329c479061feca84382766b3a342a7368a6d8f4c # v3.1.0
+        continue-on-error: true
+        with:
+          api-token: ${{ secrets.BUILDPULSE_API_TOKEN }}
+          path: rust/junit.xml
+          coverage-files: rust/lcov.info

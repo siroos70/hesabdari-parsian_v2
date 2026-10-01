@@ -1,0 +1,44 @@
+{
+  "rules": [
+    {
+      "path": "**/*.rs",
+      "rule": "Report ONLY genuine bugs, security vulnerabilities, regressions, and correctness issues in this Rust code (part of hesabyaar-core, financial calculations). Priorities: panics reachable from user input (unwrap/expect/slice indexing/arithmetic overflow), incorrect money arithmetic (rounding, Toman/Rial conversion errors, integer overflow on amounts), unsafe blocks, race conditions. Do NOT report: style, naming, formatting, missing docs, idiomatic-rewrite suggestions, or speculative performance claims without measurement. Report a finding only when you can explain the concrete failure scenario; state your confidence.",
+      "merge_system_rule": true
+    },
+    {
+      "path": "**/*.kt",
+      "rule": "Report ONLY genuine bugs, security vulnerabilities, regressions, and correctness issues in this Kotlin Android code (hesabyaar, Persian-first personal finance app). Priorities: NPE/crash paths reachable from user input, coroutine misuse (leaked jobs, wrong dispatcher, race on shared state), resource leaks (cursor/stream/database), incorrect financial calculations or Jalali calendar date math, broken intent/pendingIntent handling. Do NOT report: style, naming, formatting, compose-idiom preferences, missing KDoc, or minor architecture opinions. Active regression risks in the person-ledger / backup code: when reviewing Room migrations verify EVERY entity table (including `persons`) is copied in any plaintext→encrypted conversion and no `personId` FK is orphaned; when reviewing backup export/restore verify archived persons are included and `personId` links are preserved or remapped; when reviewing deletion paths verify guards re-check the PERSISTED state, not a caller-supplied flag; when reviewing person-name normalization verify it never yields an empty or colliding key. Report a finding only when you can explain the concrete failure scenario; state your confidence.",
+      "merge_system_rule": true
+    },
+    {
+      "path": ".github/workflows/**",
+      "rule": "This is a GitHub Actions workflow file. Report ONLY real problems: injection of untrusted input into script contexts, privilege escalation, credential exposure, jobs that can be hijacked by a fork PR, logic errors that break the pipeline, or actions whose pin no longer matches their tag claim. Do NOT report: style preferences, YAML formatting, alternative-action suggestions, or theoretical hardening ideas with no exploit path. Report a finding only when you can describe the concrete attack or failure; state your confidence.",
+      "merge_system_rule": true
+    },
+    {
+      "path": ".github/scripts/**",
+      "rule": "Repository automation scripts (JS/sh) executed inside CI. Report ONLY genuine bugs and security issues: prototype pollution / command injection from event-payload data, fail-open behavior where fail-closed is documented, schema-validation gaps that let malformed data drive decisions, logic inversion. Do NOT report: style, variable naming, missing JSDoc, or preference for other libraries. Report a finding only with a concrete failure scenario; state your confidence.",
+      "merge_system_rule": true
+    },
+    {
+      "path": "plans/**",
+      "rule": "Implementation plans, design documents, and architecture RFCs. Report genuine contradictions, broken architectural invariants, and discrepancies where the document directly contradicts active code or schema constraints. Highlight contradictions between different sections of the same plan or impossible migration promises. Do NOT report: formatting, markdown style, typos, or minor wording preferences. Report a finding only when you can point out the concrete contradiction; state your confidence.",
+      "merge_system_rule": true
+    },
+    {
+      "path": "docs/**",
+      "rule": "Project architecture and technical documentation. Report genuine contradictions with implemented code, broken API contracts, or obsolete security/database invariants. Do NOT report: wording style, formatting, or missing non-critical sections.",
+      "merge_system_rule": true
+    },
+    {
+      "path": "**/*.{sh,bash}",
+      "rule": "Shell scripts and CI automation. Report ONLY genuine bugs, unquoted variable expansions in sensitive contexts, dangerous globbing, unhandled error codes, or broken logic. Do NOT report formatting or styling.",
+      "merge_system_rule": true
+    },
+    {
+      "path": "**",
+      "rule": "General policy for this repository (hesabyaar): report genuine bugs, security issues, and regressions you are reasonably confident about, with a concrete failure scenario. Skip style, documentation nits, naming, and anything ktlint/detekt/clippy would flag. Pure refactoring preference is not a bug; report a maintainability concern only when it materially raises the risk of future defects (such findings are delivered in the PR summary rather than inline). Core guardrails (apply on EVERY run, including the fail-open path where .github/ocr-memory.md is absent): version bumps in Cargo.toml/Gradle files are INTENTIONAL release triggers - never flag them; lockfile updates under gradle/ and Cargo.lock are automated Dependabot output - intentional; user-facing strings are expected in Persian (Farsi) - do not flag mixed Persian/English as an inconsistency. When present, .github/ocr-memory.md injects the fuller project context on top of these. If you are below ~65% confident a finding is a real issue AND cannot name a concrete failure scenario, omit it; otherwise report it.",
+      "merge_system_rule": true
+    }
+  ]
+}

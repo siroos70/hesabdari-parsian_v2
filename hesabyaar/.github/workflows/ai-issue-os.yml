@@ -1,0 +1,515 @@
+name: AI Issue OS v2 (Self-Healing + Context-Aware Manual)
+
+env:
+  # Model for the Gemini CLI. Override per-repo via Settings → Secrets/Variables
+  # (vars.GEMINI_MODEL). Falls back to the previously-working model if unset.
+  GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3.1-flash-lite' }}
+
+on:
+  push:
+  pull_request:
+    types: [closed, synchronize]
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+jobs:
+  # ==========================================
+  # JOB 1: SELF-HEALING
+  # ==========================================
+  ai_os_v2:
+    if: github.event_name != 'issue_comment' && github.event_name != 'pull_request_review_comment'
+    runs-on: ubuntu-latest
+
+    permissions:
+      issues: write
+      contents: read
+      pull-requests: read
+
+    env:
+      HAS_GEMINI_KEY: ${{ secrets.GEMINI_API_KEY != '' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fetch issues
+        id: issues
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          script: |
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: "all", per_page: 100, sort: "updated", direction: "desc"
+            });
+            return issues.filter(i => !i.pull_request).slice(0, 200).map(i => ({
+              number: i.number, title: i.title, body: (i.body || "").slice(0, 500),
+              state: i.state, updated_at: i.updated_at
+            }));
+
+      - name: Issue intelligence engine
+        id: intel
+        env:
+          ISSUES_JSON: ${{ steps.issues.outputs.result }}
+        run: |
+          python3 - << 'EOF' > intel.json
+          import json, hashlib, os
+          from collections import defaultdict
+          issues = json.loads(os.environ["ISSUES_JSON"])
+          clusters, enriched = {}, []
+          for i in issues:
+              text = (i["title"] + i["body"]).lower()
+              sig = hashlib.md5(text.encode()).hexdigest()[:10]
+              labels = []
+              if any(k in text for k in ["bug","error","crash","fail"]): labels.append("bug")
+              if any(k in text for k in ["feature","add","support"]): labels.append("feature")
+              if any(k in text for k in ["security","auth","token"]): labels.append("security")
+              enriched.append({"issue": i["number"], "signature": sig, "labels": labels, "updated_at": i.get("updated_at", ""), "title": i["title"], "body_summary": i["body"][:200] if i["body"] else ""})
+              clusters.setdefault(sig[:6], []).append(i["number"])
+          label_counts = defaultdict(int)
+          for issue in enriched:
+              for label in issue["labels"]: label_counts[label] += 1
+          sorted_issues = sorted(enriched, key=lambda x: x.get("updated_at", ""), reverse=True)
+          recent_clusters = {}
+          for issue in sorted_issues[:5]:
+              key = issue["signature"][:6]
+              if key not in recent_clusters:
+                  recent_clusters[key] = {"issues": clusters.get(key, []), "sample_labels": issue["labels"], "title": issue["title"], "body_summary": issue["body_summary"]}
+          print(json.dumps({"cluster_count": len(clusters), "issue_count": len(enriched), "label_distribution": dict(label_counts), "recent_clusters": recent_clusters}))
+          EOF
+
+      - name: Rule engine
+        id: rule
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            BASE="${{ github.event.before }}"
+            HEAD="${{ github.event.after }}"
+            if [[ "$BASE" == "0000000000000000000000000000000000000000" ]]; then BASE="HEAD~1"; fi
+            git diff "$BASE" "$HEAD" -- src/ lib/ app/ > diff_full.txt
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+            HEAD="${{ github.event.pull_request.head.sha }}"
+            git diff "$BASE" "$HEAD" > diff_full.txt
+          fi
+
+          KEYWORDS="fix|bug|error|null|undefined|auth|crash|fail|exception|throw|catch"
+
+          if grep -Eqi "$KEYWORDS" diff_full.txt; then
+            echo "trigger=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "trigger=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          { head -n 500 diff_full.txt; echo "... [TRUNCATED] ..."; tail -n 500 diff_full.txt; } > diff.txt
+
+      - name: Sanitize Gemini context (strip image tags)
+        if: steps.rule.outputs.trigger == 'true' && env.HAS_GEMINI_KEY == 'true'
+        run: |
+          # Strip Markdown image tags ![alt](url) and HTML <img ...> so the Gemini
+          # CLI never sends image payloads (root cause of the API 400 errors).
+          clean() { sed -E 's/!\[[^]]*\]\([^)]*\)//g; s/<img[^>]*>//gi' "$1"; }
+          [ -f intel.json ] && clean intel.json > intel.json.tmp && mv intel.json.tmp intel.json
+          [ -f diff.txt ] && clean diff.txt > diff.txt.tmp && mv diff.txt.tmp diff.txt
+
+      - name: Prepare Gemini context
+        if: steps.rule.outputs.trigger == 'true' && env.HAS_GEMINI_KEY == 'true'
+        run: |
+          {
+            echo "INTEL_CONTEXT<<EOF"
+            cat intel.json
+            echo "EOF"
+          } >> "$GITHUB_ENV"
+
+          {
+            echo "DIFF_CONTEXT<<EOF"
+            cat diff.txt
+            echo "EOF"
+          } >> "$GITHUB_ENV"
+
+      - name: Gemini reasoning
+        if: steps.rule.outputs.trigger == 'true' && env.HAS_GEMINI_KEY == 'true'
+        continue-on-error: true
+        uses: google-github-actions/run-gemini-cli@f77273f4c914e4bf38440cf36a0369cb64a37489 # v0.1.22
+        id: gemini
+        env: { GEMINI_CLI_TRUST_WORKSPACE: "true" }
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          gemini_model: ${{ env.GEMINI_MODEL }}
+          # SECURITY (GHSA-wpqr-6v78-jr5g): this Action always runs
+          # `gemini --yolo` (action.yml 309/316) and this job is triggered by
+          # issue and PR comments, so untrusted text reaches a model that can
+          # otherwise run shell commands. Deny-by-default tool allowlist;
+          # all context arrives inline in the prompt, so no tool access is needed.
+          # Schema note: the key is `tools.core`, NOT the `coreTools` shown in
+          # the upstream docs/trust-guidance.md. The CLI's settingsSchema.ts has
+          # no `coreTools` key, so the documented form is silently ignored.
+          settings: |-
+            {
+              "tools": {
+                "core": []
+              }
+            }
+          prompt: |
+            You are a GitHub AI system.
+            Context:
+            - Issue intelligence summary:
+            ${{ env.INTEL_CONTEXT }}
+
+            - Code diff (truncated):
+            ${{ env.DIFF_CONTEXT }}
+
+            Tasks:
+            1. Detect resolved issues based on diff content
+            2. Detect regressions (previously fixed issues that broke again)
+            3. Suggest labels (bug/feature/security/refactor)
+
+            Output ONLY valid JSON:
+            {"resolved": [1], "reopen": [], "labels": {"1": ["bug"]}, "reason": "Brief explanation"}
+
+      - name: Apply issue updates
+        if: steps.gemini.outputs.summary != '' && github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RESPONSE: ${{ steps.gemini.outputs.summary }}
+          ISSUES_JSON: ${{ steps.issues.outputs.result }}
+          SHORT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if ! echo "$RESPONSE" | jq -e . >/dev/null 2>&1; then exit 0; fi
+
+          REASON=$(echo "$RESPONSE" | jq -r '.reason // "No reason provided"')
+          OPEN_IDS=$(jq -r '.[] | select(.state == "open") | .number' <<< "$ISSUES_JSON")
+          CLOSED_IDS=$(jq -r '.[] | select(.state == "closed") | .number' <<< "$ISSUES_JSON")
+
+          RESOLVED=$(echo "$RESPONSE" | jq -r 'if (.resolved | type) == "array" then .resolved[:5][]? else empty end')
+          REOPEN=$(echo "$RESPONSE" | jq -r 'if (.reopen | type) == "array" then .reopen[:5][]? else empty end')
+          LABELS_JSON=$(echo "$RESPONSE" | jq -r 'if (.labels | type) == "object" then .labels else {} end')
+
+          OVERLAPS="" RESOLVED_CLEAN="" REOPEN_CLEAN=""
+          for i in $RESOLVED; do echo "$REOPEN" | grep -qxF "$i" && OVERLAPS="$OVERLAPS $i" || RESOLVED_CLEAN="$RESOLVED_CLEAN $i"; done
+          for i in $REOPEN; do echo "$RESOLVED" | grep -qxF "$i" || REOPEN_CLEAN="$REOPEN_CLEAN $i"; done
+
+          for i in $RESOLVED_CLEAN; do
+            if [[ ! "$i" =~ ^[0-9]+$ ]] || ! echo "$OPEN_IDS" | grep -qxF "$i"; then continue; fi
+            COMMIT_LINK="[${SHORT_SHA:0:7}](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})"
+            gh issue comment "$i" --body "✅ Auto-resolved by AI OS v2 (Triggered by commit ${COMMIT_LINK})\n> ${REASON}"
+            gh issue close "$i"
+          done
+
+          for i in $REOPEN_CLEAN; do
+            if [[ ! "$i" =~ ^[0-9]+$ ]] || ! echo "$CLOSED_IDS" | grep -qxF "$i"; then continue; fi
+            COMMIT_LINK="[${SHORT_SHA:0:7}](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})"
+            gh issue comment "$i" --body "⚠️ Regression detected - re-opening issue (Triggered by commit ${COMMIT_LINK})\n> ${REASON}"
+            gh issue reopen "$i"
+          done
+
+          for i in $(echo "$LABELS_JSON" | jq -r 'keys[]'); do
+            if [[ ! "$i" =~ ^[0-9]+$ ]]; then continue; fi
+            # FIX: بررسی مجزای لیست‌های اپن و کلوزد برای جلوگیری از خطای فضای خالی (Space)
+            if ! echo "$OPEN_IDS" | grep -qxF "$i" && ! echo "$CLOSED_IDS" | grep -qxF "$i"; then
+              continue
+            fi
+
+            LABELS=$(echo "$LABELS_JSON" | jq -r ".\"$i\" | join(\",\")")
+            [ -n "$LABELS" ] && gh issue edit "$i" --add-label "$LABELS" || true
+          done
+
+  # ==========================================
+  # JOB 2: AUTO-CLOSE RESOLVED ISSUES
+  # ==========================================
+  auto_close_resolved:
+    if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+
+    permissions:
+      issues: write
+      contents: read
+
+    steps:
+      - name: Checkout with full history
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Find and close resolved issues
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SERVER_URL: ${{ github.server_url }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          echo "=== Auto-Close Resolved Issues ==="
+
+          # Get open issues (skip PRs — they use `#43` style, skip issues without # prefix)
+          ISSUES=$(gh issue list --repo "$REPO" --state open --json number,title --limit 200)
+
+          CLOSED=0
+
+          # --- Pass 1: scan history once ---
+          # Build a map of issue number to closing commits, newest first.
+          # Keep at most 5 commits per issue. This mirrors the previous
+          # per-issue "git log -n 5" limit.
+          #
+          # LOOSE_CHAIN runs inside git as a cheap superset filter. It has
+          # no word boundary checks. Each candidate message then gets one
+          # exact check per referenced issue number. PER_NUM_TEMPLATE adds
+          # both boundaries. It rejects embedded verbs like "unfixed" or
+          # "hotfixes". It rejects letters right after a number, like
+          # "#40abc". It keeps partial numbers apart, like "#40" and
+          # "#400".
+          LOOSE_CHAIN='(fix(es|ed)?|close[sd]?|resolve[sd]?|patch(es|ed)?)[[:space:]]+(issues?[[:space:]]+)?#[0-9]+([[:space:]]*,[[:space:]]*#[0-9]+)*'
+          # ${NUM} stays literal here on purpose: this is a template that is
+          # expanded dynamically for each candidate issue number below.
+          # shellcheck disable=SC2016
+          PER_NUM_TEMPLATE='(^|[^[:alnum:]_])(fix(es|ed)?|close[sd]?|resolve[sd]?|patch(es|ed)?)[[:space:]]+(issues?[[:space:]]+)?(#[0-9]+[[:space:]]*,[[:space:]]*)*#${NUM}([^[:alnum:]_]|$)'
+          MAX_MATCHES_PER_ISSUE=5
+
+          declare -A MATCH_LINES_BY_ISSUE
+          declare -A MATCH_COUNT_BY_ISSUE
+
+          # One newline character, used to trim git's record separator.
+          NL=$'\n'
+
+          # Record format: SHA <US> full message <RS>. Read on <RS> so a
+          # multi-line body stays in one record. The trailing "||" keeps
+          # the last record when it has no terminator.
+          while IFS= read -r -d $'\x1e' RECORD || [ -n "$RECORD" ]; do
+            # Git writes one newline after each record. Drop it so the
+            # SHA never carries a leading newline.
+            RECORD="${RECORD#"$NL"}"
+            [ -z "$RECORD" ] && continue
+            SHA="${RECORD%%$'\x1f'*}"
+            MESSAGE="${RECORD#*$'\x1f'}"
+
+            # Flatten newlines so "[[:space:]]" can span lines. This
+            # matches how git --grep scans the whole message buffer.
+            FLAT_MSG=$(printf '%s' "$MESSAGE" | tr '\n' ' ')
+
+            CANDIDATES=$(printf '%s\n' "$FLAT_MSG" | grep -oE '#[0-9]+' | tr -d '#' | sort -un)
+            [ -z "$CANDIDATES" ] && continue
+
+            SUBJECT=$(printf '%s' "$MESSAGE" | head -n 1)
+            LOG_LINE="${SHA} ${SUBJECT}"
+
+            # One exact boundary-aware check per referenced number.
+            for NUM in $CANDIDATES; do
+              COUNT="${MATCH_COUNT_BY_ISSUE[$NUM]:-0}"
+              if [ "$COUNT" -ge "$MAX_MATCHES_PER_ISSUE" ]; then
+                continue
+              fi
+              PER_NUM_PATTERN="${PER_NUM_TEMPLATE//\$\{NUM\}/${NUM}}"
+              if printf '%s\n' "$FLAT_MSG" | grep -qiE "${PER_NUM_PATTERN}"; then
+                MATCH_COUNT_BY_ISSUE[$NUM]=$((COUNT + 1))
+                MATCH_LINES_BY_ISSUE[$NUM]+="${LOG_LINE}"$'\n'
+              fi
+            done
+          done < <(git log --all -E -i --grep="${LOOSE_CHAIN}" --format='%H%x1f%B%x1e')
+
+          while IFS= read -r ROW; do
+            NUM=$(echo "$ROW" | jq -r '.number')
+            TITLE=$(echo "$ROW" | jq -r '.title')
+
+            if echo "$TITLE" | grep -qiE '^<sub>|^hesabyaar-.*\.kt:'; then
+              echo "⏭️ #${NUM}: auto-generated issue, skipping"
+              continue
+            fi
+
+            # Look up the prebuilt map from the single history scan.
+            MATCHES="${MATCH_LINES_BY_ISSUE[$NUM]:-}"
+
+            if [ -z "$MATCHES" ]; then
+              echo "⏭️ #${NUM}: no closing reference"
+              continue
+            fi
+
+            echo "🔍 #${NUM} (${TITLE:0:50}): found closing reference"
+            echo "$MATCHES" | head -3
+
+            # Take the most recent matching commit
+            COMMIT_LINE=$(echo "$MATCHES" | head -1)
+            COMMIT_SHA=$(echo "$COMMIT_LINE" | awk '{print $1}')
+            COMMIT_MSG=$(echo "$COMMIT_LINE" | cut -d' ' -f2-)
+
+            # Get files changed in that commit
+            COMMIT_FILES=$(git diff-tree --no-commit-id --name-only -r "$COMMIT_SHA" 2>/dev/null || true)
+
+            # Build the comment using heredoc (reliable multiline)
+            COMMIT_URL="${SERVER_URL}/${REPO}/commit/${COMMIT_SHA}"
+            SHORT_SHA="${COMMIT_SHA:0:7}"
+
+            COMMENT=$(cat <<EOF
+          ✅ **Issue resolved automatically**
+
+          **Commit:** [\`${SHORT_SHA}\`](${COMMIT_URL})
+          **Message:** ${COMMIT_MSG}
+
+          **Changed files:**
+          $(echo "$COMMIT_FILES" | head -8 | sed 's/^/- `/' | sed 's/$/`/')
+
+          ---
+          🤖 *Auto-closed by AI Issue OS — commit references issue #${NUM}. If incorrect, reopen.*
+          EOF
+          )
+
+            echo "✅ Closing #${NUM}"
+            gh issue comment "$NUM" --repo "$REPO" --body "$COMMENT"
+            gh issue close "$NUM" --repo "$REPO"
+            CLOSED=$((CLOSED + 1))
+          done <<< "$(echo "$ISSUES" | jq -c '.[]')"
+
+          echo "=== Done: closed ${CLOSED} issues ==="
+
+  # ==========================================
+  # JOB 3: MANUAL ISSUE FROM REPLY CONTEXT (was JOB 2)
+  # ==========================================
+  manual_issue_from_pr:
+    if: contains(github.event.comment.body, '/ai-fix') && ((github.event_name == 'issue_comment' && github.event.issue.pull_request) || github.event_name == 'pull_request_review_comment') && (github.event.comment.author_association == 'OWNER' || github.event.comment.author_association == 'COLLABORATOR' || github.event.comment.author_association == 'MEMBER')
+    runs-on: ubuntu-latest
+
+    permissions:
+      issues: write
+      pull-requests: write
+      contents: read
+
+    steps:
+      - name: Extract Parent Context & Diff
+        id: pr_context
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          script: |
+            const isReviewComment = context.eventName === 'pull_request_review_comment';
+            const pr_number = context.payload.pull_request?.number || context.issue.number;
+            const triggerComment = context.payload.comment;
+            let parentText = "";
+
+            if (triggerComment.in_reply_to_id) {
+              if (isReviewComment) {
+                const parent = await github.rest.pulls.getReviewComment({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  comment_id: triggerComment.in_reply_to_id
+                });
+                parentText = parent.data.body;
+              } else {
+                const parent = await github.rest.issues.getComment({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  comment_id: triggerComment.in_reply_to_id
+                });
+                parentText = parent.data.body;
+              }
+            } else {
+              parentText = triggerComment.body;
+            }
+
+            const diffData = await github.rest.pulls.get({
+              owner: context.repo.owner, repo: context.repo.repo,
+              pull_number: pr_number,
+              mediaType: { format: 'diff' }
+            });
+
+            core.setOutput('pr_url', `https://github.com/${context.repo.owner}/${context.repo.repo}/pull/${pr_number}`);
+            core.setOutput('diff', diffData.data.slice(0, 15000));
+            core.setOutput('parent_context', parentText.slice(0, 5000));
+
+      - name: Acknowledge command
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request_review_comment" ]; then
+            ENDPOINT="/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments"
+          else
+            ENDPOINT="/repos/${{ github.repository }}/issues/${{ github.event.issue.number }}/comments"
+          fi
+
+          gh api --method POST -H "Accept: application/vnd.github+json" \
+            $ENDPOINT \
+            -f "body=🤖 AI OS received \`/ai-fix\`. Reading the reported context..." \
+            -f "in_reply_to_id=${{ github.event.comment.id }}"
+
+      - name: Generate Issue with Gemini
+        id: gen_issue
+        continue-on-error: true
+        uses: google-github-actions/run-gemini-cli@f77273f4c914e4bf38440cf36a0369cb64a37489 # v0.1.22
+        env: { GEMINI_CLI_TRUST_WORKSPACE: "true" }
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          gemini_model: ${{ env.GEMINI_MODEL }}
+          # SECURITY (GHSA-wpqr-6v78-jr5g): `/ai-fix` is an issue_comment
+          # trigger, so the parent comment and the PR diff are attacker-
+          # controllable. This Action always runs `gemini --yolo`, hence the
+          # deny-by-default tool allowlist below; all context arrives inline
+          # in the prompt, so no tool access is needed.
+          # Schema note: `tools.core`, not the `coreTools` from the upstream
+          # docs/trust-guidance.md, which the CLI ignores.
+          settings: |-
+            {
+              "tools": {
+                "core": []
+              }
+            }
+          prompt: |
+            You are an expert QA engineer. A user replied to a bot's code review or bug report with the command `/ai-fix`.
+
+            HERE IS THE EXACT BUG REPORT/REVIEW FROM THE BOT (Parent Comment):
+            ---
+            ${{ steps.pr_context.outputs.parent_context }}
+            ---
+
+            HERE IS THE PR CODE DIFF FOR CONTEXT:
+            ---
+            ${{ steps.pr_context.outputs.diff }}
+            ---
+
+            TASK: Create a highly professional GitHub Issue based STRICTLY on the "BUG REPORT FROM THE BOT" provided above. Use the diff only to understand the code context.
+
+            Output ONLY valid JSON with exactly this structure:
+            {
+              "title": "Concise bug title based on the report",
+              "body": "Detailed markdown body explaining the bug reported by the bot, expected vs actual behavior, and referencing the problematic code snippet.",
+              "labels": ["bug"]
+            }
+
+      - name: Validate, Create Issue & Reply to PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RESPONSE: ${{ steps.gen_issue.outputs.summary }}
+          PR_NUM: ${{ github.event.pull_request.number || github.event.issue.number }}
+          PR_URL: ${{ steps.pr_context.outputs.pr_url }}
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" == "pull_request_review_comment" ]; then
+            ENDPOINT="/repos/${{ github.repository }}/pulls/$PR_NUM/comments"
+          else
+            ENDPOINT="/repos/${{ github.repository }}/issues/$PR_NUM/comments"
+          fi
+
+          if ! echo "$RESPONSE" | jq -e . >/dev/null 2>&1; then
+            gh api --method POST -H "Accept: application/vnd.github+json" "$ENDPOINT" -f "body=❌ AI failed to parse JSON response." -f "in_reply_to_id=${{ github.event.comment.id }}"
+            exit 1
+          fi
+
+          TITLE=$(echo "$RESPONSE" | jq -r '.title // empty')
+          BODY=$(echo "$RESPONSE" | jq -r '.body // empty')
+          LABELS=$(echo "$RESPONSE" | jq -r 'if (.labels | type) == "array" then (.labels | join(",")) else empty end')
+
+          if [ -z "$TITLE" ] || [ -z "$BODY" ]; then
+            gh api --method POST -H "Accept: application/vnd.github+json" "$ENDPOINT" -f "body=❌ AI generated invalid issue fields (missing title or body)." -f "in_reply_to_id=${{ github.event.comment.id }}"
+            exit 1
+          fi
+
+          FOOTER="\n\n---\n🤖 *This issue was automatically generated via \`/ai-fix\` from [PR #${PR_NUM}]($PR_URL)*"
+          FULL_BODY="${BODY}${FOOTER}"
+
+          ISSUE_URL=$(gh issue create --title "$TITLE" --body "$FULL_BODY" --label "$LABELS")
+
+          gh api --method POST -H "Accept: application/vnd.github+json" \
+            "$ENDPOINT" \
+            -f "body=✅ Successfully created issue: ${ISSUE_URL}" \
+            -f "in_reply_to_id=${{ github.event.comment.id }}"

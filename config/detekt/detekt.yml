@@ -1,0 +1,36 @@
+# detekt configuration for Hesabyar
+#
+# Handwritten Kotlin is linted; auto-generated UniFFI bindings are excluded via
+# task-level excludes in build.gradle.kts (rust/uniffi/**, generated/**,
+# rust/hesabyar_core.kt). Per-rule excludes below also suppress generated code
+# so they remain available to resolve types referenced by handwritten code.
+
+naming:
+  FunctionNaming:
+    active: true
+    ignoreAnnotated: ['Composable']
+
+style:
+  UnnecessaryParentheses:
+    active: true
+    excludes:
+      - '**/rust/uniffi/**'
+      - '**/generated/**'
+      - '**/rust/hesabyar_core.kt'
+  UtilityClassWithPublicConstructor:
+    active: true
+    excludes:
+      - '**/test/**'
+
+empty-blocks:
+  EmptyFunctionBlock:
+    excludes:
+      - '**/test/**'
+
+complexity:
+  CyclomaticComplexMethod:
+    active: true
+    excludes:
+      - '**/rust/uniffi/**'
+      - '**/generated/**'
+      - '**/rust/hesabyar_core.kt'

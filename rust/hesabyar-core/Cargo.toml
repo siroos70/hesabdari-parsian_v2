@@ -1,0 +1,30 @@
+[package]
+name = "hesabyar-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "hesabyar_core"
+
+[dependencies]
+uniffi = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+sha2 = "0.11"
+rust_xlsxwriter = "0.99"
+
+
+[dev-dependencies]
+proptest = "1"
+criterion = { version = "0.8", features = ["html_reports"] }
+
+[[bench]]
+name = "parser_bench"
+harness = false
+
+[lints]
+workspace = true
+

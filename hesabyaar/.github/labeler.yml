@@ -1,0 +1,107 @@
+# Labeler configuration for actions/labeler.
+# Each key is an existing repository label. Each value lists the path globs
+# that add that label to a pull request. See .github/workflows/labeler.yml.
+
+# The Rust core crate. All business logic lives here.
+rust:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'rust/**'
+
+# Kotlin and Java sources, plus the generated UniFFI bridge.
+java:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'app/src/**/*.kt'
+      - 'app/src/**/*.java'
+
+# Tests only. Use this next to another label for a change that has both.
+test:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'app/src/test/**'
+      - 'app/src/androidTest/**'
+      - '**/*.test.mjs'
+      - '**/*.test.js'
+      - 'rust/**/tests/**'
+      - 'scripts/tests/**'
+      - '.github/scripts/*.test.mjs'
+      - 'scripts/test-*.sh'
+
+# Build configuration. Includes the Gradle and Cargo manifests.
+build:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'build.gradle*'
+      - 'settings.gradle*'
+      - 'gradle.properties'
+      - 'gradle/**'
+      - 'gradlew'
+      - 'gradlew.bat'
+      - 'app/build.gradle*'
+      - 'app/proguard-rules.pro'
+      - 'rust/Cargo.toml'
+      - 'rust/Cargo.lock'
+      - 'rust/**/Cargo.toml'
+      - 'rust/Makefile'
+      - 'rust/rust-toolchain.toml'
+
+# Dependency manifests and lock files.
+dependencies:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'gradle/libs.versions.toml'
+      - 'rust/Cargo.lock'
+      - 'rust/Cargo.toml'
+      - 'app/build.gradle*'
+      - 'VERSION'
+
+# CI workflow definitions.
+ci:
+  - changed-files:
+    - any-glob-to-any-file:
+      - '.github/workflows/**'
+
+# Reusable composite actions and the action pin manager.
+github_actions:
+  - changed-files:
+    - any-glob-to-any-file:
+      - '.github/actions/**'
+      - 'scripts/github-actions-pin-manager.mjs'
+      - 'scripts/test-github-actions-pin-manager.mjs'
+      - '.github/linters/**'
+
+# The OCR issue resolver and its tests.
+ocr:
+  - changed-files:
+    - any-glob-to-any-file:
+      - '.github/scripts/ocr-resolve.js'
+      - '.github/scripts/ocr-resolve.test.mjs'
+      - '.github/workflows/ocr-resolver-tests.yml'
+      - '.github/workflows/ocr-review-job.yml'
+
+# Documentation in Persian. Includes the agent guides in the root.
+docs:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'docs/**'
+      - '*.md'
+      - '**/*.md'
+      - 'LICENSE'
+
+# User-facing strings and translations.
+i18n:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'app/src/main/res/values*/**'
+      - 'app/src/main/res/**/strings.xml'
+
+# Repository housekeeping that changes no product code.
+# Test scripts under scripts/tests belong to the test label only.
+chore:
+  - changed-files:
+    - any-glob-to-any-file:
+      - '.gitignore'
+      - '.gitattributes'
+      - '.editorconfig'
+      - '**/.gitignore'

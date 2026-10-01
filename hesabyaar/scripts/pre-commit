@@ -1,0 +1,340 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# Backup state for the Rust worktree materialization. Declared at script scope
+# so the EXIT trap can always clean it up, even on a crash. Paths live only in
+# these Bash arrays. A Git path may contain spaces, tabs, quotes, brackets, or
+# newlines, so no newline-delimited path file is ever written or parsed here.
+rust_backup_dir=""
+RUST_DIRTY_FILES=()     # tracked rust/ inputs whose worktree differed from the index
+RUST_UNTRACKED_FILES=() # non-ignored untracked files under rust/
+declare -A RUST_DIRTY_MODES=() # permission bits of each dirty input in octal before backup
+
+# Print a file's permission bits as octal digits without leading zeros.
+# GNU stat accepts -c. BSD and macOS stat accept -f '%Lp'. The value is
+# accepted only when it is pure octal. Returns non-zero when no stat
+# variant can read a valid mode. The caller must then abort: a mode that
+# was not recorded cannot be restored after materialization.
+capture_file_mode() {
+  local m
+  m=$(stat -c '%a' -- "$1" 2>/dev/null) && [[ "$m" =~ ^[0-7]{1,4}$ ]] && { printf '%s' "$m"; return 0; }
+  m=$(stat -f '%Lp' -- "$1" 2>/dev/null) && [[ "$m" =~ ^[0-7]{1,4}$ ]] && { printf '%s' "$m"; return 0; }
+  return 1
+}
+
+# Restore every rust/ input the Rust block touched back to its original
+# worktree state. Idempotent: a second call is a no-op. Nothing here loses
+# user data. It copies backups back. It reapplies each saved worktree mode.
+# It moves untracked files back. It deletes the index copy of a file that
+# was absent before the hook ran.
+restore_rust_worktree() {
+  local b="$rust_backup_dir"
+  [[ -n "$b" && -d "$b" ]] || return 0
+  local root f
+  root=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
+  if [[ -n "$root" ]]; then
+    for f in "${RUST_DIRTY_FILES[@]}"; do
+      if [[ -f "$b/tracked/$f" ]]; then
+        mkdir -p "$(dirname "$root/$f")"
+        cp "$b/tracked/$f" "$root/$f"
+        # Reapply the worktree mode saved before materialization. checkout-index
+        # wrote the index mode and cp keeps the destination mode, so the copy
+        # alone cannot restore them. An unknown mode leaves the copy untouched.
+        local m="${RUST_DIRTY_MODES[$f]:-}"
+        if [[ "$m" =~ ^[0-7]{1,4}$ ]]; then
+          chmod "$m" "$root/$f" 2>/dev/null || true
+        fi
+      else
+        # No backup exists, so this file was absent before the hook ran.
+        # Delete the index copy the hook materialized for validation.
+        rm -f "$root/$f"
+      fi
+    done
+    for f in "${RUST_UNTRACKED_FILES[@]}"; do
+      [[ -f "$b/untracked/$f" ]] || continue
+      mkdir -p "$(dirname "$root/$f")"
+      mv "$b/untracked/$f" "$root/$f"
+    done
+  fi
+  rm -rf "$b"
+  RUST_DIRTY_FILES=()
+  RUST_UNTRACKED_FILES=()
+  RUST_DIRTY_MODES=()
+  rust_backup_dir=""
+}
+
+trap restore_rust_worktree EXIT
+
+echo "==========================================="
+echo "  Hesabyar — Pre-Commit Hook"
+echo "==========================================="
+
+# Run all quality gates: Kotlin format + lint + detekt, then Rust fmt + clippy
+try_commit() {
+  # Record originally staged files using null-delimited output for safe filename handling
+  local staged_files
+  mapfile -d '' -t staged_files < <(git diff --cached --name-only -z)
+
+  # Run ktlintFormat first to auto-fix formatting
+  echo ""
+  echo "[1/5] Running ktlintFormat (auto-fix)..."
+  if ! ./gradlew ktlintFormat --quiet; then
+    echo "❌ ktlintFormat failed — there may be unresolved formatting issues."
+    echo "   Run ./gradlew ktlintFormat manually to see details."
+    return 1
+  fi
+  echo "  ✓ ktlintFormat passed"
+
+  # Snapshot each staged file's working-tree hash before ktlintFormat runs,
+  # then compare after to re-stage only files ktlintFormat actually changed.
+  # This avoids pulling in pre-existing unstaged changes the user left out.
+  if [[ ${#staged_files[@]} -gt 0 ]]; then
+    declare -A pre_format_hash
+    for f in "${staged_files[@]}"; do
+      if [[ -f "$f" ]]; then
+        pre_format_hash["$f"]=$(git hash-object "$f" 2>/dev/null || echo "")
+      fi
+    done
+
+    local modified_files=()
+    for f in "${staged_files[@]}"; do
+      if [[ -f "$f" ]]; then
+        local post_hash
+        post_hash=$(git hash-object "$f" 2>/dev/null || echo "")
+        if [[ -n "${pre_format_hash[$f]}" && "${pre_format_hash[$f]}" != "$post_hash" ]]; then
+          modified_files+=("$f")
+        fi
+      fi
+    done
+    if [[ ${#modified_files[@]} -gt 0 ]]; then
+      echo "  Re-staging ${#modified_files[@]} file(s) with auto-fixes..."
+      git add "${modified_files[@]}"
+    fi
+  fi
+
+  # Run ktlintCheck to verify no style violations remain
+  echo ""
+  echo "[2/5] Running ktlintCheck..."
+  if ! ./gradlew ktlintCheck --quiet; then
+    echo "❌ ktlintCheck failed — Kotlin style violations detected."
+    echo "   Fix the issues manually or re-stage the files and try again."
+    return 1
+  fi
+  echo "  ✓ ktlintCheck passed"
+
+  # Run detekt to match CI strictness (whole-project, non-autocorrectable rules)
+  echo ""
+  echo "[3/5] Running detekt (static analysis)..."
+  if ! ./gradlew detekt; then
+    echo "❌ detekt failed — code quality issues detected."
+    echo "   Fix the issues or run ./gradlew detekt to see details."
+    return 1
+  fi
+  echo "  ✓ detekt passed"
+
+  # Cargo must be on PATH. A missing Rust toolchain is a hard failure, never a skip.
+  if ! command -v cargo >/dev/null 2>&1; then
+    echo "❌ cargo not found — cannot run Rust checks."
+    echo "   Install the Rust toolchain (https://rustup.rs), reopen the shell, and retry."
+    return 1
+  fi
+
+  # The Rust workspace must be present. A missing rust/ directory is a hard
+  # failure with a clear hint — never a silent skip.
+  if [[ ! -d rust ]]; then
+    echo "❌ Rust workspace directory 'rust/' not found."
+    echo "   The hook requires a full repository checkout that includes the rust/ workspace."
+    echo "   Restore rust/ (or clone the full repository) and retry the commit."
+    return 1
+  fi
+
+  # ---------------------------------------------------------------------------
+  # Index/worktree correctness for the Rust gates.
+  #
+  # cargo fmt and cargo clippy operate on the WORKTREE. The commit records the
+  # INDEX. Two rules follow:
+  #   1. The tooling must see the exact commit candidate. Every tracked input
+  #      under rust/ whose worktree bytes differ from the index is temporarily
+  #      replaced by its index version.
+  #   2. The worktree must survive. The original bytes are backed up first and
+  #      put back afterwards. This includes files the user deleted without
+  #      staging the deletion; their absence is restored too.
+  #
+  # Rust validation inputs are all tracked files under rust/:
+  #   - *.rs sources and build.rs
+  #   - Cargo.toml manifests (workspace root and members)
+  #   - Cargo.lock
+  #   - .cargo/config.toml and rust-toolchain.toml
+  # Nothing outside rust/ affects cargo here, so nothing outside rust/ is
+  # materialized or moved.
+  #
+  # The hook saves each dirty file's full permission mode with its content.
+  # checkout-index -f writes the index mode to the worktree. On hosts with
+  # core.fileMode=true, any unstaged chmod makes the file a dirty input, and
+  # a content-only restore would drop that mode. The restore step reapplies
+  # the saved octal mode exactly, not just an execute bit. On hosts where
+  # chmod cannot represent modes, the reapply is a harmless no-op.
+  # ---------------------------------------------------------------------------
+
+  # Clean up any backup left by a previous attempt in this process.
+  restore_rust_worktree
+
+  rust_backup_dir=$(mktemp -d "${TMPDIR:-/tmp}/hesabyar-rust.XXXXXX") || {
+    echo "❌ Could not create a temporary backup directory for the Rust checks."
+    return 1
+  }
+  mkdir -p "$rust_backup_dir/tracked" "$rust_backup_dir/untracked"
+
+  # Inventory the Rust validation inputs. staged_rs feeds cargo fmt only.
+  # dirty_inputs covers every tracked rust/ file whose worktree bytes differ
+  # from the index — not just *.rs — so partially staged Cargo.toml,
+  # Cargo.lock, build.rs, or toolchain config cannot leak unstaged state into
+  # clippy. untracked_rs removes non-ignored untracked files under rust/.
+  local -a staged_rs=() dirty_inputs=() untracked_rs=()
+  local f
+  while IFS= read -r -d '' f; do
+    [[ "$f" == rust/* ]] && staged_rs+=("$f")
+  done < <(git diff --cached -z --name-only -- '*.rs')
+  while IFS= read -r -d '' f; do
+    dirty_inputs+=("$f")
+  done < <(git diff-files -z --name-only -- rust/)
+  while IFS= read -r -d '' f; do
+    untracked_rs+=("$f")
+  done < <(git ls-files -z --others --exclude-standard -- rust/)
+
+  # Snapshot the pre-fmt index blob OID of each staged Rust file.
+  declare -A staged_oid
+  for f in "${staged_rs[@]}"; do
+    staged_oid["$f"]=$(git ls-files -s -- "$f" | awk '{print $2}')
+  done
+
+  # Back up the original worktree bytes of every dirty input. A missing file
+  # records an absent state: the user deleted it without staging. We must not
+  # copy a nonexistent file; restore deletes our materialized copy instead.
+  # For each present file, also record its full permission mode. Git tracks
+  # only one execute class per file, but Unix worktrees can carry richer
+  # modes such as 0740, and checkout-index -f is about to overwrite them
+  # with the index mode.
+  #
+  # A mode that cannot be captured is a hard failure here, BEFORE any
+  # materialization. The hook has only written inside the backup directory
+  # at this point, so discarding it leaves the worktree untouched. The EXIT
+  # trap then sees an empty backup dir and does nothing.
+  for f in "${dirty_inputs[@]}"; do
+    if [[ -f "$f" ]]; then
+      mkdir -p "$(dirname "$rust_backup_dir/tracked/$f")"
+      cp "$f" "$rust_backup_dir/tracked/$f"
+      local mode
+      if ! mode=$(capture_file_mode "$f"); then
+        echo "❌ Cannot capture file mode for '$f'."
+        echo "   Neither 'stat -c %a' nor 'stat -f %Lp' returned a valid octal mode."
+        echo "   The hook will not replace worktree files whose mode it cannot"
+        echo "   record and put back. Install a working 'stat' and retry."
+        rm -rf "$rust_backup_dir"
+        RUST_DIRTY_FILES=()
+        RUST_UNTRACKED_FILES=()
+        RUST_DIRTY_MODES=()
+        rust_backup_dir=""
+        return 1
+      fi
+      RUST_DIRTY_MODES["$f"]="$mode"
+    fi
+    RUST_DIRTY_FILES+=("$f")
+  done
+  if [[ ${#dirty_inputs[@]} -gt 0 ]]; then
+    git checkout-index -f -- "${dirty_inputs[@]}"
+  fi
+
+  # Move untracked files out of the rust/ subtree. They are not part of the
+  # commit candidate, and a stray manifest or source could alter validation.
+  # They are moved back when the checks finish.
+  for f in "${untracked_rs[@]}"; do
+    mkdir -p "$(dirname "$rust_backup_dir/untracked/$f")"
+    mv "$f" "$rust_backup_dir/untracked/$f"
+    RUST_UNTRACKED_FILES+=("$f")
+  done
+
+  # Run cargo fmt. Only format staged sources so an unrelated Kotlin commit
+  # does not rewrite the whole Rust worktree. cargo fmt selects the toolchain
+  # via rust/rust-toolchain.toml because the subshell starts inside rust/.
+  echo ""
+  echo "[4/5] Running cargo fmt (auto-fix)..."
+  local -a fmt_paths=()
+  for f in "${staged_rs[@]}"; do
+    # A staged deletion has no worktree file. Exclude it from the rustfmt
+    # path list; the deletion stays in the index untouched.
+    [[ -f "$f" ]] && fmt_paths+=("${f#rust/}")
+  done
+  if [[ ${#fmt_paths[@]} -eq 0 ]]; then
+    echo "  No staged Rust sources to format — skipping cargo fmt"
+  else
+    if ! (cd rust && cargo fmt -- "${fmt_paths[@]}"); then
+      echo "❌ cargo fmt failed."
+      echo "   Run (cd rust && cargo fmt) manually to see details."
+      restore_rust_worktree
+      return 1
+    fi
+    echo "  ✓ cargo fmt passed"
+
+    # Re-stage only the formatting delta for staged Rust files. Because the
+    # worktree was materialized from the index, `git add` here cannot pull in
+    # unrelated unstaged edits — those are backed up and restored later.
+    local -a to_restage=()
+    local post_oid
+    for f in "${staged_rs[@]}"; do
+      [[ -f "$f" ]] || continue
+      post_oid=$(git hash-object --path="$f" -- "$f" 2>/dev/null || echo "")
+      if [[ -n "${staged_oid[$f]}" && "${staged_oid[$f]}" != "$post_oid" ]]; then
+        to_restage+=("$f")
+      fi
+    done
+    if [[ ${#to_restage[@]} -gt 0 ]]; then
+      echo "  Re-staging ${#to_restage[@]} Rust file(s) with auto-fixes..."
+      git add "${to_restage[@]}"
+    fi
+  fi
+
+  # Run clippy against the worktree, which now equals the (formatted) commit
+  # candidate. Unrelated unstaged edits are excluded by materialization.
+  echo ""
+  echo "[5/5] Running cargo clippy (static analysis)..."
+  if ! (cd rust && cargo clippy --workspace --all-targets --all-features -- -D warnings); then
+    echo "❌ cargo clippy failed — Rust code quality issues detected."
+    echo "   Fix the issues or run: (cd rust && cargo clippy --workspace --all-targets --all-features)"
+    restore_rust_worktree
+    return 1
+  fi
+  echo "  ✓ cargo clippy passed"
+
+  restore_rust_worktree
+  return 0
+}
+
+# Loop until all checks pass
+while true; do
+  if try_commit; then
+    break
+  fi
+
+  # Ask user to fix issues and re-stage files
+  echo ""
+  read -p "Fix issues and stage files? (y/n): " choice
+  case "$choice" in
+    y|Y)
+      echo "Continuing..."
+      ;;
+    n|N)
+      echo "Aborting commit."
+      exit 1
+      ;;
+    *)
+      echo "Invalid input. Please answer y or n."
+      ;;
+  esac
+done
+
+echo ""
+echo "==========================================="
+echo "  All checks passed! Proceeding with commit."
+echo "==========================================="

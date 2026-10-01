@@ -1,0 +1,37 @@
+[workspace]
+resolver = "2"
+members = ["hesabyar-core", "uniffi-gen"]
+
+[workspace.package]
+version = "0.3.0"
+edition = "2021"
+license = "MIT"
+authors = ["Hesabyar Contributors"]
+
+[workspace.dependencies]
+uniffi = { version = "0.32", features = ["cli"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+# Lint policy for the whole workspace. Each crate opts in with
+# `[lints] workspace = true` in its own Cargo.toml.
+#
+# Levels:
+# - correctness issues deny the build. They mark likely bugs.
+# - style, complexity, perf, and suspicious issues warn. They do not block
+#   local builds.
+# - unwrap_used, expect_used, and panic are restriction lints. Upstream sets
+#   them to allow by default. We opt in at warn level so new uses surface in
+#   review. Test code may allow them per crate root (see lib.rs).
+[workspace.lints.clippy]
+all = "warn"
+suspicious = "warn"
+complexity = "warn"
+perf = "warn"
+style = "warn"
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+# priority = 1 applies this group after `all`, so deny wins over the warn above.
+correctness = { level = "deny", priority = 1 }

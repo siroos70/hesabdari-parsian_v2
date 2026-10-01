@@ -1,0 +1,44 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Coin circle -->
+    <path
+        android:pathData="M54,30 C67.25,30 78,40.75 78,54 C78,67.25 67.25,78 54,78 C40.75,78 30,67.25 30,54 C30,40.75 40.75,30 54,30z"
+        android:fillColor="#26FFFFFF" />
+
+    <!-- Inner coin ring -->
+    <path
+        android:pathData="M54,34 C65.05,34 74,42.95 74,54 C74,65.05 65.05,74 54,74 C42.95,74 34,65.05 34,54 C34,42.95 42.95,34 54,34z"
+        android:strokeWidth="1.5"
+        android:fillColor="#00000000"
+        android:strokeColor="#33FFFFFF" />
+
+    <!-- Upward trend line -->
+    <path
+        android:pathData="M38,62 L48,52 L56,58 L70,42"
+        android:strokeWidth="3.5"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- Arrow head -->
+    <path
+        android:pathData="M63,42 L70,42 L70,49"
+        android:strokeWidth="3.5"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- Toman symbol (ت) stylized -->
+    <path
+        android:pathData="M50,66 C50,66 52,70 54,70 C56,70 58,66 58,66"
+        android:strokeWidth="2.5"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round" />
+</vector>

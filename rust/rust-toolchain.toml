@@ -1,0 +1,7 @@
+# Stable toolchain for all cargo commands in this workspace.
+# CI installs clippy + rustfmt from this file. Keep the channel at "stable"
+# so contributors do not need a specific point release.
+[toolchain]
+channel = "stable"
+profile = "minimal"
+components = ["clippy", "rustfmt"]

@@ -1,0 +1,32 @@
+[
+  {
+    "input": "\u0655\u06F0\u06F0\u06F0 \u0647\u0632\u0627\u0631 \u062A\u0648\u0645\u0646 \u0628\u0627\u0628\u062A \u0628\u0631\u0642",
+    "expected_type": "EXPENSE",
+    "expected_amount_rial": 5000000,
+    "expected_category": "Bills"
+  },
+  {
+    "input": "\u0627\u0645\u0631\u0648\u0632 \u062D\u0642\u0648\u0642 \u06AF\u0631\u0641\u062A\u0645 \u06F2\u06F0 \u0645\u06CC\u0644\u06CC\u0648\u0646",
+    "expected_type": "INCOME",
+    "expected_amount_rial": 200000000,
+    "expected_category": "Income"
+  },
+  {
+    "input": "\u0628\u0647 \u0639\u0644\u06CC \u06F2 \u0645\u06CC\u0644\u06CC\u0648\u0646 \u0642\u0631\u0636 \u062F\u0627\u062F\u0645",
+    "expected_type": "EXPENSE",
+    "expected_amount_rial": 20000000,
+    "expected_category": "Loans & Debt"
+  },
+  {
+    "input": "\u0635\u0628\u062D\u0627\u0646\u0647 \u0642\u0647\u0648\u0647 \u062E\u0648\u0631\u062F\u0645",
+    "expected_type": "EXPENSE",
+    "expected_amount_rial": 0,
+    "expected_category": "Food"
+  },
+  {
+    "input": "\u0628\u0646\u0632\u06CC\u0646 \u0632\u062F\u0645",
+    "expected_type": "EXPENSE",
+    "expected_amount_rial": 0,
+    "expected_category": "Transportation"
+  }
+]

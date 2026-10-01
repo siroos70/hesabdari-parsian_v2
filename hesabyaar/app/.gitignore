@@ -1,0 +1,16 @@
+# Module build
+/build
+
+# Generated files
+.externalNativeBuild/
+.cxx/
+
+# Local config
+/local.properties
+
+# Gradle
+.gradle/
+
+# IDE
+*.iml
+.idea/

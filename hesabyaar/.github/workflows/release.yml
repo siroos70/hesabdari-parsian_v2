@@ -1,0 +1,658 @@
+name: Release
+
+# PR-only release flow.
+#
+# A push to main that changes application code runs the PREPARE job: it
+# computes the next version, runs tests, builds APK/AAB artifacts,
+# pushes a release/vX.Y.Z branch and opens an auto-merge Pull Request
+# back to main. This workflow NEVER pushes to main directly.
+#
+# When the release PR merges, the landing push on main runs the FINALIZE
+# job: the tag and GitHub Release are published from the CI artifacts
+# produced by the prepare run. The prepare run ID travels to finalize
+# inside the release PR body, so finalize downloads exactly the
+# artifacts built for this release.
+#
+# Required repository setting: "Allow auto-merge" must be enabled
+# (Settings > General > Pull Requests). Without it the prepare run ends
+# with a clear error instead of bypassing protections.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  classify:
+    # Decide what this push to main means. No checkout needed; this job
+    # talks to the GitHub API only.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      mode: ${{ steps.classify.outputs.mode }}
+      version: ${{ steps.classify.outputs.version }}
+      pr_number: ${{ steps.classify.outputs.pr_number }}
+    steps:
+      - name: Classify push
+        id: classify
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ github.sha }}
+          HEAD_AUTHOR: ${{ github.event.head_commit.author.username }}
+          HEAD_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          set -euo pipefail
+          mode="prepare"
+          version=""
+          pr_number=""
+
+          # Exact lookup: the pull request(s) associated with this landing
+          # commit. Works for merge commits, squash and rebase strategies,
+          # and cannot miss due to a page-size limit.
+          # An API failure must NOT fall through to the prepare path: a real
+          # release landing would then never be finalized. Abort loudly so
+          # the run can be retried.
+          if ! prs=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/pulls" \
+            --jq '.[] | select(.head.ref | test("^release/v[0-9]+\\.[0-9]+\\.[0-9]+$")) | [(.number | tostring), .head.ref] | @tsv' \
+            2>api_err.log); then
+            echo "::error::Failed to query PRs associated with commit ${HEAD_SHA}: $(cat api_err.log)"
+            echo "::error::Cannot classify this push safely. Re-run the Release workflow once GitHub API access works."
+            exit 1
+          fi
+
+          if [ -n "$prs" ]; then
+            mode="finalize"
+            pr_number=$(printf '%s' "$prs" | head -n1 | cut -f1)
+            branch=$(printf '%s' "$prs" | head -n1 | cut -f2)
+            version="${branch#release/v}"
+          elif [ "$HEAD_AUTHOR" = "github-actions[bot]" ] && \
+               printf '%s' "$HEAD_MESSAGE" | head -n1 | grep -qE '^chore: release v[0-9]+\.[0-9]+\.[0-9]+'; then
+            # Fallback: a bot-authored release commit landed without PR
+            # metadata (for example a squash whose PR was deleted).
+            mode="finalize"
+            version=$(printf '%s' "$HEAD_MESSAGE" | head -n1 | sed -E 's/^chore: release v([0-9]+\.[0-9]+\.[0-9]+).*$/\1/')
+          elif printf '%s' "$HEAD_MESSAGE" | grep -q '\[skip release\]'; then
+            mode="manual-skip"
+            {
+              echo "### ⏭️ Release skipped"
+              echo ""
+              echo "Head commit message contains [skip release]."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          {
+            echo "mode=$mode"
+            echo "version=$version"
+            echo "pr_number=$pr_number"
+          } >> "$GITHUB_OUTPUT"
+          echo "Push classified as: $mode${version:+ (v$version)}"
+
+  finalize:
+    # Publish tag + GitHub Release after the release PR reached main.
+    needs: classify
+    if: needs.classify.outputs.mode == 'finalize'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      # Publish the tag and GitHub Release.
+      contents: write
+      # Read the prepare run's artifacts.
+      actions: read
+      # Read the release PR body to extract the prepare run ID.
+      pull-requests: read
+    env:
+      VERSION: ${{ needs.classify.outputs.version }}
+      PR_NUMBER: ${{ needs.classify.outputs.pr_number }}
+      HEAD_SHA: ${{ github.sha }}
+      # The finalize job intentionally does NOT check out the repo (it is a
+      # pure API job). `gh pr view` / `gh release view` therefore cannot infer
+      # the repository from git context and fail with
+      # "fatal: not a git repository". Pin the repo explicitly so those
+      # calls resolve without a checkout.
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Check existing GitHub Release
+        id: state
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "already_done=true" >> "$GITHUB_OUTPUT"
+            echo "GitHub Release v$VERSION already exists - nothing to do."
+          else
+            echo "already_done=false" >> "$GITHUB_OUTPUT"
+            echo "GitHub Release v$VERSION missing - publishing now."
+          fi
+
+      - name: Download prepared artifacts
+        if: steps.state.outputs.already_done == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-artifacts notes
+
+          # Prefer the artifacts produced by the exact prepare run recorded
+          # in the release PR body. A failed API read on an existing PR
+          # aborts loudly; no PR at all or a missing marker falls back to a
+          # name-only lookup with visible warnings.
+          if [ -n "$PR_NUMBER" ]; then
+            if ! pr_body=$(gh pr view "$PR_NUMBER" --json body --jq '.body'); then
+              echo "::error::Failed to read body of PR #${PR_NUMBER}; cannot resolve the prepare run for v${VERSION}."
+              exit 1
+            fi
+            run_id=$(printf '%s' "$pr_body" | grep -o 'hesabyar-release-run:[0-9]*' | head -n1 | cut -d: -f2 || true)
+          else
+            echo "::warning::Finalizing without a release PR; using latest artifact named 'release-v${VERSION}'."
+            run_id=""
+          fi
+          if [ -z "$run_id" ]; then
+            echo "::warning::No prepare-run marker for v${VERSION}; using latest matching artifact. Verify the published binaries belong to this release."
+          fi
+
+          fetch_artifact () {
+            local name="$1" dest="$2" list_url id
+            if [ -n "$run_id" ]; then
+              list_url="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts?name=${name}&per_page=100"
+            else
+              echo "::warning::No prepare run marker on PR #${PR_NUMBER}; using latest artifact named ${name}."
+              list_url="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts?name=${name}&per_page=100"
+            fi
+            id=$(curl -sfL -H "Authorization: Bearer $GH_TOKEN" "$list_url" | \
+              jq -r '[.artifacts[] | select(.expired == false)][0].id // empty')
+            if [ -z "$id" ]; then
+              echo "::error::CI artifact '${name}' not found (or expired). Cannot publish v${VERSION} without its build artifacts."
+              exit 1
+            fi
+            curl -sfL -H "Authorization: Bearer $GH_TOKEN" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}/zip" \
+              -o artifact.zip
+            unzip -q artifact.zip -d "$dest"
+            rm -f artifact.zip
+          }
+
+          fetch_artifact "release-v${VERSION}" release-artifacts
+          fetch_artifact "release-notes-v${VERSION}" notes
+          ls -la release-artifacts notes
+
+      - name: Publish tag and GitHub Release
+        if: steps.state.outputs.already_done == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # --target pins the tag exactly to the commit merged into main;
+          # gh creates the tag as part of the release publication.
+          gh release create "v${VERSION}" \
+            --target "$HEAD_SHA" \
+            --title "v${VERSION}" \
+            --notes-file notes/release-notes.md \
+            release-artifacts/*.apk \
+            release-artifacts/*.aab \
+            release-artifacts/*.sha256
+          echo "Published v${VERSION} at commit ${HEAD_SHA}."
+
+      - name: Summary - finalized
+        if: steps.state.outputs.already_done == 'false'
+        run: |
+          {
+            echo "### 🚀 Release v${VERSION} published"
+            echo ""
+            echo "| Item | Value |"
+            echo "|------|-------|"
+            echo "| Version | ${VERSION} |"
+            echo "| Source PR | #${PR_NUMBER:-unknown} |"
+            echo "| Tag | v${VERSION} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Summary - already published
+        if: steps.state.outputs.already_done == 'true'
+        run: |
+          {
+            echo "### ⏭️ Finalize skipped"
+            echo ""
+            echo "Release v${VERSION} already exists."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  prepare:
+    # Normal application change landed on main: build a candidate release
+    # and hand it over as an auto-merge PR.
+    needs: classify
+    if: needs.classify.outputs.mode == 'prepare'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+          token: ${{ secrets.WORKFLOW_PAT }}
+
+      - name: Detect application changes
+        id: detect
+        env:
+          BASE_REF: ${{ github.event.before }}
+        run: |
+          if bash scripts/detect-changes.sh "$BASE_REF" HEAD; then
+            echo "release_needed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "release_needed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Parse conventional commits
+        if: steps.detect.outputs.release_needed == 'true'
+        id: parse
+        env:
+          BASE_REF: ${{ github.event.before }}
+        run: |
+          result=$(bash scripts/parse-commits.sh "$BASE_REF" HEAD)
+          bump_type=$(echo "$result" | jq -r '.bump_type')
+          summary=$(echo "$result" | jq -r '.summary')
+          {
+            echo "bump_type=$bump_type"
+            echo "summary<<EOF"
+            echo "$summary"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "Bump type: $bump_type"
+
+      - name: Bump version
+        if: steps.detect.outputs.release_needed == 'true'
+        id: bump
+        env:
+          BUMP_TYPE: ${{ steps.parse.outputs.bump_type }}
+        run: |
+          new_version=$(bash scripts/bump-version.sh "$BUMP_TYPE")
+          echo "new_version=$new_version" >> "$GITHUB_OUTPUT"
+
+      - name: Check if tag already exists
+        if: steps.detect.outputs.release_needed == 'true'
+        id: check_tag
+        env:
+          NEW_VERSION: ${{ steps.bump.outputs.new_version }}
+        run: |
+          # Remote check is authoritative even when the local clone lacks refs.
+          if [ -n "$(git ls-remote origin "refs/tags/v${NEW_VERSION}")" ]; then
+            echo "tag_exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag_exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up JDK 17
+        if: steps.detect.outputs.release_needed == 'true' && steps.check_tag.outputs.tag_exists == 'false'
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          java-version: "17"
+          distribution: "temurin"
+
+      - name: Setup Rust for Android
+        if: steps.detect.outputs.release_needed == 'true' && steps.check_tag.outputs.tag_exists == 'false'
+        uses: ./.github/actions/setup-rust-android
+
+      - name: Cache Cargo dependencies
+        if: steps.detect.outputs.release_needed == 'true' && steps.check_tag.outputs.tag_exists == 'false'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Cache Gradle packages
+        if: steps.detect.outputs.release_needed == 'true' && steps.check_tag.outputs.tag_exists == 'false'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: ${{ runner.os }}-gradle-
+
+      - name: Setup keystore
+        if: steps.detect.outputs.release_needed == 'true' && steps.check_tag.outputs.tag_exists == 'false'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > my-upload-key.jks
+          echo "Keystore decoded successfully"
+
+      - name: Run Rust tests
+        if: steps.detect.outputs.release_needed == 'true' && steps.check_tag.outputs.tag_exists == 'false'
+        working-directory: rust
+        run: cargo test -p hesabyar-core
+
+      - name: Grant execute permission for gradlew
+        if: steps.detect.outputs.release_needed == 'true' && steps.check_tag.outputs.tag_exists == 'false'
+        run: chmod +x gradlew
+
+      - name: Generate Rust bindings
+        if: steps.detect.outputs.release_needed == 'true' && steps.check_tag.outputs.tag_exists == 'false'
+        run: ./gradlew :app:generateAndFixBindings
+
+      - name: Run unit tests
+        if: steps.detect.outputs.release_needed == 'true' && steps.check_tag.outputs.tag_exists == 'false'
+        run: ./gradlew testDebugUnitTest
+
+      - name: Build release APK and AAB
+        if: steps.detect.outputs.release_needed == 'true' && steps.check_tag.outputs.tag_exists == 'false'
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          # APKs need per-ABI splits (GitHub release distribution);
+          # the AAB must be built WITHOUT splits, otherwise AGP emits
+          # multiple shrunk-resources files and buildReleasePreBundle fails.
+          ./gradlew assembleRelease -PenableAbiSplits=true --no-daemon && \
+          ./gradlew bundleRelease -PenableAbiSplits=false --no-daemon
+
+      - name: Generate checksums
+        if: steps.detect.outputs.release_needed == 'true' && steps.check_tag.outputs.tag_exists == 'false'
+        env:
+          NEW_VERSION: ${{ steps.bump.outputs.new_version }}
+        run: |
+          mkdir -p release-artifacts
+          VER="v${NEW_VERSION}"
+          # Map Gradle's per-ABI APK names to user-friendly, versioned filenames.
+          declare -A ABI_MAP=(
+            ["armeabi-v7a"]="arm-v7a"
+            ["arm64-v8a"]="arm-v8a"
+            ["x86_64"]="x86_64"
+            ["universal"]="universal"
+          )
+          while IFS= read -r src; do
+            [ -z "$src" ] && continue
+            name=$(basename "$src")
+            base="${name#app-}"
+            base="${base%-release.apk}"
+            abi="${ABI_MAP[$base]:-universal}"
+            if [ -z "${ABI_MAP[$base]+x}" ]; then
+              echo "WARNING: unrecognized APK filename '$name' (base='$base'); labeling as universal" >&2
+            fi
+            dst="release-artifacts/hesabyar-${VER}-${abi}.apk"
+            cp "$src" "$dst"
+            echo "APK: $dst"
+          done < <(find app/build/outputs/apk -name "*-release.apk")
+          aab_dir="app/build/outputs/bundle/release"
+          aab_files=("${aab_dir}"/*.aab)
+          if [ -e "${aab_files[0]}" ]; then
+            if [ "${#aab_files[@]}" -gt 1 ]; then
+              echo "ERROR: multiple AABs produced, destination name collision" >&2
+              exit 1
+            fi
+            cp "${aab_files[0]}" "release-artifacts/hesabyar-${VER}.aab"
+            echo "AAB: release-artifacts/hesabyar-${VER}.aab"
+          else
+            echo "No AAB produced; skipping bundle copy."
+          fi
+          cd release-artifacts
+          for f in *.apk *.aab; do
+            if [ -f "$f" ]; then
+              sha256sum "$f" > "${f}.sha256"
+              echo "Checksum: $f"
+            fi
+          done
+
+      - name: Generate release notes with AI
+        if: steps.detect.outputs.release_needed == 'true' && steps.check_tag.outputs.tag_exists == 'false'
+        id: notes
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.0-flash' }}
+          NEW_VERSION: ${{ steps.bump.outputs.new_version }}
+          BASE_REF: ${{ github.event.before }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Heading kept ASCII in-source (base64) to avoid non-ASCII in the workflow;
+          # decoded at runtime below. (Persian "previous releases" string.)
+          PREV_HEADING_B64: "2YbYs9iu2YfigIzZh9in24wg2YLYqNmE24w="
+        run: |
+          PREV_HEADING=$(printf '%s' "${PREV_HEADING_B64}" | base64 -d)
+          # Current version's notes (used for both the release page and CHANGELOG).
+          bash scripts/generate-release-notes.sh "$NEW_VERSION" "$BASE_REF" HEAD > current-notes.md
+
+          # Append descriptions of the last 5 releases from the release page itself.
+          prev_section=""
+          while IFS= read -r tag; do
+            [ -z "$tag" ] && continue
+            body=$(gh release view "$tag" --json body --jq '.body' 2>/dev/null || echo "")
+            [ -z "$body" ] && continue
+            # Strip the RTL wrapper and any nested "previous releases" section to avoid recursion.
+            body=$(printf '%s' "$body" | sed -e 's#^<div dir="rtl">##' -e 's#</div>$##' | sed "/^## ${PREV_HEADING}/,\$d")
+            prev_section="${prev_section}## ${tag}"$'\n'"${body}"$'\n'$'\n'
+          done < <(gh release list --limit 5 --json tagName --jq '.[].tagName' 2>/dev/null)
+
+          {
+            echo '<div dir="rtl">'
+            echo ""
+            cat current-notes.md
+            echo ""
+            if [ -n "$prev_section" ]; then
+              echo "## ${PREV_HEADING}"
+              echo ""
+              printf '%s' "$prev_section"
+            fi
+            echo ""
+            echo '</div>'
+          } > release-notes.md
+          echo "notes_file=release-notes.md" >> "$GITHUB_OUTPUT"
+
+      - name: Update CHANGELOG with release notes
+        if: steps.detect.outputs.release_needed == 'true' && steps.check_tag.outputs.tag_exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW_VERSION: ${{ steps.bump.outputs.new_version }}
+        run: |
+          python3 scripts/update-changelog.py "$NEW_VERSION" current-notes.md 5
+
+      - name: Upload build artifacts
+        if: steps.detect.outputs.release_needed == 'true' && steps.check_tag.outputs.tag_exists == 'false'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-v${{ steps.bump.outputs.new_version }}
+          path: release-artifacts/
+          retention-days: 30
+
+      - name: Upload release notes artifact
+        if: steps.detect.outputs.release_needed == 'true' && steps.check_tag.outputs.tag_exists == 'false'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-notes-v${{ steps.bump.outputs.new_version }}
+          path: release-notes.md
+          retention-days: 30
+
+      - name: Publish release branch and pull request
+        id: publish
+        if: steps.detect.outputs.release_needed == 'true' && steps.check_tag.outputs.tag_exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          NEW_VERSION: ${{ steps.bump.outputs.new_version }}
+          BUMP_TYPE: ${{ steps.parse.outputs.bump_type }}
+          SUMMARY: ${{ steps.parse.outputs.summary }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          BRANCH="release/v${NEW_VERSION}"
+
+          # Marker stamped into the PR body so finalize can find exactly these
+          # artifacts. Written into the body AT CREATION TIME (not via a later
+          # edit) so it survives even if the separate stamping step is skipped
+          # or fails. The dedicated 'Stamp release run into PR body' step below
+          # re-stamps a *reused* PR; it is decoupled (continue-on-error) so a
+          # transient API failure there can never block auto-merge.
+          marker="<!-- hesabyar-release-run:${RUN_ID} -->"
+
+          # Commit the release state on the dedicated branch. The branch tip
+          # is the exact main commit that triggered this run.
+          git checkout -B "$BRANCH"
+          git add VERSION CHANGELOG.md
+          git commit -m "chore: release v${NEW_VERSION} [skip release]"
+
+          existing_pr=$(gh pr list --head "$BRANCH" --base main --state open \
+            --json number --jq '.[0].number // empty')
+
+          remote_branch_exists=$(git ls-remote --heads origin "$BRANCH" | wc -l)
+
+          if [ "$remote_branch_exists" -gt 0 ]; then
+            # Automation-owned branch. An attached open PR gets refreshed with
+            # the freshly computed release state; a stale branch with no PR is
+            # replaced the same way.
+            # Refresh the remote-tracking ref before pushing: the lease must
+            # be based on the branch's CURRENT remote tip. Relying on the
+            # initial checkout's refs is fragile, and without the ref at all
+            # --force-with-lease refuses every push.
+            git fetch origin "$BRANCH"
+            git push --force-with-lease origin "$BRANCH"
+          else
+            git push origin "$BRANCH"
+          fi
+
+          if [ -n "$existing_pr" ]; then
+            echo "Reusing existing PR #${existing_pr} for $BRANCH."
+            pr_number="$existing_pr"
+          else
+            # PR body assembly. The SUMMARY comes from commit subjects on
+            # main and is never shell-expanded: it goes through printf,
+            # outside any unquoted heredoc. Only the validated version and
+            # bump type are expanded. The release-run marker is appended so
+            # finalize can resolve the producing run without depending on the
+            # later stamping step succeeding.
+            {
+              cat <<BODY_EOF
+          <!-- Automated release PR created by the Release workflow. -->
+
+          ## Release v${NEW_VERSION}
+
+          | Item | Value |
+          |------|-------|
+          | Version | ${NEW_VERSION} |
+          | Bump type | ${BUMP_TYPE} |
+
+          ### Changes included
+
+          BODY_EOF
+              printf '%s\n' "$SUMMARY"
+              cat <<'FOOTER_EOF'
+
+          ---
+
+          _This PR was created automatically by the Release workflow. Merging it publishes the release: the tag and GitHub Release are finalized after this PR reaches `main`._
+          FOOTER_EOF
+              printf '%s\n' "$marker"
+            } > pr-body.md
+            pr_number=$(gh pr create \
+              --base main \
+              --head "$BRANCH" \
+              --title "chore: release v${NEW_VERSION}" \
+              --body-file pr-body.md)
+            pr_number=$(printf '%s' "$pr_number" | grep -oE '[0-9]+$')
+            echo "Created PR #${pr_number} for $BRANCH."
+          fi
+
+          {
+            echo "pr_number=${pr_number}"
+            echo "branch=${BRANCH}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Stamp release run into PR body
+        # Decoupled from PR creation so a transient API failure (e.g. a missing
+        # token scope) can NEVER block auto-merge. The marker is already written
+        # into the body at creation time; this re-stamp keeps a *reused* PR
+        # pointed at the latest run. continue-on-error guarantees the auto-merge
+        # step below still runs even if this edit fails.
+        id: stamp
+        if: steps.detect.outputs.release_needed == 'true' && steps.check_tag.outputs.tag_exists == 'false'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          PR_NUMBER: ${{ steps.publish.outputs.pr_number }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          marker="<!-- hesabyar-release-run:${RUN_ID} -->"
+          body=$(gh pr view "$PR_NUMBER" --json body --jq '.body')
+          { printf '%s\n' "$body" | grep -v 'hesabyar-release-run:' || true; } > pr-body-clean.md
+          printf '%s\n%s\n' "$(cat pr-body-clean.md)" "$marker" > pr-body-stamped.md
+          gh pr edit "$PR_NUMBER" --body-file pr-body-stamped.md
+
+      - name: Enable auto-merge on release PR
+        if: steps.detect.outputs.release_needed == 'true' && steps.check_tag.outputs.tag_exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          PR_NUMBER: ${{ steps.publish.outputs.pr_number }}
+        run: |
+          # Idempotent: do not touch a PR that already has auto-merge set.
+          already=$(gh pr view "$PR_NUMBER" --json autoMergeRequest \
+            --jq '.autoMergeRequest != null')
+          if [ "$already" = "true" ]; then
+            echo "Auto-merge already enabled on PR #${PR_NUMBER}."
+            exit 0
+          fi
+          if ! gh pr merge "$PR_NUMBER" --auto --merge; then
+            echo "::error::Failed to enable auto-merge on PR #${PR_NUMBER}."
+            echo "Most likely cause: 'Allow auto-merge' is disabled in repository Settings > General > Pull Requests." >&2
+            echo "Enable it once; do NOT work around by merging manually or pushing to main." >&2
+            exit 1
+          fi
+          echo "Auto-merge enabled on PR #${PR_NUMBER}; GitHub will merge after required checks pass."
+
+      - name: Cleanup keystore
+        if: always()
+        run: rm -f my-upload-key.jks
+
+      - name: Summary - release prepared
+        if: steps.detect.outputs.release_needed == 'true' && steps.check_tag.outputs.tag_exists == 'false'
+        env:
+          NEW_VERSION: ${{ steps.bump.outputs.new_version }}
+          BUMP_TYPE: ${{ steps.parse.outputs.bump_type }}
+          PR_NUMBER: ${{ steps.publish.outputs.pr_number }}
+        run: |
+          {
+            echo "### ✅ Release v${NEW_VERSION} prepared"
+            echo ""
+            echo "| Item | Value |"
+            echo "|------|-------|"
+            echo "| Version | ${NEW_VERSION} |"
+            echo "| Bump type | ${BUMP_TYPE} |"
+            echo "| PR | #${PR_NUMBER} (auto-merge enabled) |"
+            echo "| Tag | created after PR merges |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Summary - tag exists
+        if: steps.detect.outputs.release_needed == 'true' && steps.check_tag.outputs.tag_exists == 'true'
+        env:
+          NEW_VERSION: ${{ steps.bump.outputs.new_version }}
+        run: |
+          {
+            echo "### ⏭️ Release skipped"
+            echo ""
+            echo "Tag v${NEW_VERSION} already exists."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Summary - no app changes
+        if: steps.detect.outputs.release_needed == 'false'
+        run: |
+          {
+            echo "### ⏭️ Release skipped"
+            echo ""
+            echo "No application code changes detected."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,74 @@
+# EditorConfig — https://editorconfig.org
+# Root config for the Hesabyar project. Applies to all files.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+max_line_length = 120
+
+# Kotlin — drives ktlint behavior.
+[*.{kt,kts}]
+indent_size = 2
+max_line_length = 120
+# Keep imports that ktlint would otherwise flag. The codebase uses wildcard
+# imports in places (e.g. material3.*); we relax the rule to avoid churning
+# the whole UI layer in Phase 0. Revisit in a later phase.
+ktlint_standard_no-wildcard-imports = disabled
+# Allow experimental/trailing-comma freedom until a cleanup pass.
+ktlint_standard_trailing-comma-on-call-site = disabled
+ktlint_standard_trailing-comma-on-declaration-site = disabled
+# Composable functions conventionally start with uppercase; suppress naming rule.
+ktlint_function_naming_ignore_when_annotated_with = Composable
+
+# Gradle / config
+[*.{gradle,kts,btf}]
+indent_size = 2
+
+# TOML (version catalog)
+[*.toml]
+indent_size = 2
+
+# Markdown docs
+[*.md]
+trim_trailing_whitespace = false
+max_line_length = off
+
+# XML resources
+[*.{xml,svg}]
+indent_size = 4
+
+# YAML (CI workflows)
+[*.{yml,yaml}]
+indent_size = 2
+
+# Makefile (tabs required)
+[Makefile]
+indent_style = tab
+
+# Generated UniFFI Kotlin bindings — do not lint.
+# Names are dictated by the Rust core, so disable naming/filename rules here.
+[**/hesabyar_core.kt]
+generated = true
+ktlint_standard_filename = disabled
+ktlint_standard_function-naming = disabled
+ktlint_standard_property-naming = disabled
+
+# Exclude entire rust and uniffi source directories (auto-generated UniFFI bindings).
+[**/rust/**/*.kt]
+generated = true
+
+[**/uniffi/**/*.kt]
+generated = true
+
+# Exclude entire generated Rust/UniFFI directories from ktlint.
+# These contain auto-generated bindings; linting them produces noise.
+[**/rust/**/*.kt]
+generated = true
+
+[**/uniffi/**/*.kt]
+generated = true

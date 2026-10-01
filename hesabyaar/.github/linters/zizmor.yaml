@@ -1,0 +1,30 @@
+---
+# Zizmor configuration. Super-Linter passes this file with
+# `zizmor --config`, so every rule listed here runs on every pull
+# request that touches a workflow.
+rules:
+  # All three dtolnay/rust-toolchain pins below use the same commit,
+  # 4cda84d5c5c54efe2404f9d843567869ab1699d4 ("toolchain: stable", the
+  # newest version table). The audit cannot confirm an upstream pin from
+  # a shallow checkout, so it reports a false positive. Each ignore entry
+  # is scoped to one path:line so the rule stays active for any other pin
+  # in these files.
+  impostor-commit:
+    ignore:
+      - rust-lint.yml:34
+      - codspeed-rust.yml:33
+      - .github/actions/setup-rust-android/action.yml:22
+  # OpenCodeReview requires pull_request_target and issues/pull-requests write
+  # to review fork pull requests and post/update review comments securely.
+  # Scoped to exact lines so other triggers/permissions remain audited.
+  dangerous-triggers:
+    ignore:
+      - ocr-review.yml:57
+  excessive-permissions:
+    ignore:
+      - ocr-review.yml:66
+      - ocr-review.yml:70
+  self-repository:
+    ignore:
+      - ocr-review.yml:76
+      - ocr-review.yml:94

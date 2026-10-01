@@ -1,0 +1,11 @@
+# Limit parallel compilation jobs to prevent cargo-ndk subprocess freezes on
+# Windows.  Without this, `cargo build --release` spawns one rustc/clang process
+# per CPU core (12 on this machine), which overwhelms cargo-ndk's pipe-based
+# subprocess management and causes the build to hang.
+#
+# On Windows, cargo-ndk + inheritIO() caused pipe-buffer deadlocks at high
+# parallelism.  That is now fixed (stdout/stderr → temp files), so we can
+# safely use more cores.  6 jobs on a 12-core machine leaves headroom for
+# the OS and NDK clang processes.  Drop to 2 if freezes return.
+[build]
+jobs = 6

@@ -1,0 +1,6 @@
+{
+  "name": "حسابیار هوشمند",
+  "description": "دستیار مالی هوشمند با پشتیبانی از زبان فارسی و هوش مصنوعی جمینی",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

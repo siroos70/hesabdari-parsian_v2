@@ -1,0 +1,1050 @@
+# Reusable OpenCodeReview review job (issue #206 phase 2).
+#
+# Called twice by ocr-review.yml: once with the primary LLM configuration and,
+# only if that job FAILS, once more with the Anthropic fallback configuration.
+# Keeping the single definition here guarantees both attempts run the exact
+# same security pattern - trusted base-SHA rules fetch, trusted base checkout
+# restore, evidence-gated audit - so a degraded fallback can never weaken the
+# review pipeline.
+#
+# NOTE: github.event inside a called workflow mirrors the caller's event, so
+# the issue_comment authorization predicate in the job `if` behaves identically
+# for both trigger paths.
+
+name: OpenCodeReview review job
+
+on:
+  workflow_call:
+    inputs:
+      llm_url:
+        description: 'LLM API endpoint'
+        required: true
+        type: string
+      llm_model:
+        description: 'Model name'
+        required: true
+        type: string
+      use_anthropic:
+        description: "'true' for Anthropic-style APIs"
+        required: true
+        type: boolean
+    secrets:
+      auth_token:
+        description: 'LLM auth token'
+        required: true
+
+jobs:
+  code-review:
+    runs-on: ubuntu-latest
+    # Least-privilege: reusable workflows do NOT inherit the caller's
+    # permissions block (ocr-review.yml's permissions do not propagate). Declare
+    # exactly what this job needs; both the primary and fallback invocations run
+    # under this same block.
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    # 60 (was 30): reasoning mode extends per-request latency; a handful of
+    # slow LLM requests must not kill the run before comments are posted.
+    timeout-minutes: 60
+    # The ocr CLI launcher spawns a detached background self-update
+    # (`npm i -g @alibaba-group/open-code-review@latest`) on every invocation.
+    # On PR #279 that raced the pinned-version install: the global bin symlink
+    # went dangling mid-run and `ocr review` died with
+    # "Cannot find module '/usr/local/bin/ocr'". The version is already pinned
+    # via ocr_version, so the CLI's own self-update is disabled here.
+    env:
+      OCR_NO_UPDATE: "1"
+    if: |
+      github.event_name == 'pull_request_target'
+      || (
+        github.event_name == 'issue_comment'
+        && github.event.issue.pull_request
+        && github.event.comment.user.type != 'Bot'
+        && (
+          github.event.comment.author_association == 'MEMBER'
+          || github.event.comment.author_association == 'OWNER'
+          || github.event.comment.author_association == 'COLLABORATOR'
+        )
+        && (
+          startsWith(github.event.comment.body, '/open-code-review')
+          || startsWith(github.event.comment.body, '@open-code-review')
+        )
+      )
+    steps:
+      - name: Get PR context
+        id: pr-context
+        if: github.event_name == 'issue_comment'
+        # v9.0.0 (immutable pin)
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const prNumber = context.issue.number;
+            const { data: pullRequest } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+            core.setOutput('base_ref', pullRequest.base.ref);
+            core.setOutput('base_sha', pullRequest.base.sha);
+            core.setOutput('head_sha', pullRequest.head.sha);
+
+      # SECURITY: the rule file is prompt INPUT for the reviewer, and the
+      # OpenCodeReview action performs its own un-pinned checkout of the PR
+      # merge ref before it runs. A relative rule path would therefore be read
+      # from the PR-controlled workspace, letting a fork rewrite its own review
+      # rules (suppress findings, inject instructions). Fetch the rules from
+      # the IMMUTABLE base SHA instead - the same trust anchor the audit step
+      # below relies on. Fail-open: if the base tree predates the file, the
+      # review proceeds with built-in defaults rather than failing.
+      - name: Fetch trusted review rules
+        id: trusted-rules
+        env:
+          BASE_SHA: ${{ steps.pr-context.outputs.base_sha || github.event.pull_request.base.sha }}
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const RULES_PATH = '.github/ocr-rules.json';
+            const MEMORY_PATH = '.github/ocr-memory.md';
+
+            // Read one trusted file from an immutable ref. Throws on any
+            // non-file payload; callers decide how to handle a 404.
+            async function getTrustedFile(ref, path) {
+              const { data } = await github.rest.repos.getContent({
+                owner: owner,
+                repo: repo,
+                path: path,
+                ref: ref
+              });
+              if (data.type !== 'file' || typeof data.content !== 'string') {
+                const err = new Error(`unexpected getContent payload type: ${data.type} for ${path}`);
+                err.code = 'UNEXPECTED_PAYLOAD';
+                throw err;
+              }
+              return Buffer.from(data.content, 'base64').toString('utf8');
+            }
+
+            // Load the structured rules JSON + the project-memory markdown from
+            // the SAME immutable ref, then inject the memory into EVERY rule
+            // entry so it applies to all matched file types (the action matches
+            // first-match-wins by path). Returns true on success, false when the
+            // rules file itself is absent (404); any other error propagates.
+            async function loadFrom(ref, refLabel) {
+              let rulesRaw;
+              try {
+                rulesRaw = await getTrustedFile(ref, RULES_PATH);
+              } catch (e) {
+                if (e.status === 404) return false;
+                throw e;
+              }
+              // Validate before persisting: malformed rules JSON would
+              // otherwise surface as an opaque error deep inside the action.
+              let parsed;
+              try {
+                parsed = JSON.parse(rulesRaw);
+              } catch (e) {
+                throw new Error(`Invalid rules JSON from ${refLabel} (${ref.slice(0, 12)}): ${e.message}`);
+              }
+              // Project memory is optional: a branch that predates ocr-memory.md
+              // simply reviews without it (fail-open; the rules still apply).
+              // A non-file payload (e.g. a directory/symlink at that path) is
+              // treated identically to a missing file - the step must not abort
+              // on an incidental memory-file problem.
+              let memory = '';
+              try {
+                memory = await getTrustedFile(ref, MEMORY_PATH);
+              } catch (e) {
+                if (e.status === 404 || e.code === 'UNEXPECTED_PAYLOAD') {
+                  core.warning(`Project memory file not present at ${refLabel} (${ref.slice(0, 12)}); reviewing without it.`);
+                } else {
+                  throw e;
+                }
+              }
+              if (parsed === null || typeof parsed !== 'object' || !Array.isArray(parsed.rules)) {
+                // Fail closed: a present-but-structurally-invalid trusted rules
+                // file is NOT the same as "no rules file" (404). Silently
+                // proceeding with zero custom rules would drop the entire
+                // security-review coverage with no signal. The 404 path still
+                // falls through to built-in defaults below.
+                const msg = `Rules file from ${refLabel} (${ref.slice(0, 12)}) has no 'rules' array; refusing to review without valid rules.`;
+                throw new Error(msg);
+              }
+              const injected = parsed.rules.map((r) => ({
+                ...r,
+                rule: memory ? `${r.rule ?? ''}\n\n${memory}` : (r.rule ?? ''),
+              }));
+              // Preserve the full rules document (not just the rules array) so
+              // any other top-level keys are retained; only the rules entries
+              // get the project memory appended. Per-run private directory
+              // (mkdtemp) + owner-only file mode: never follow a pre-existing
+              // symlink at a predictable /tmp path.
+              parsed.rules = injected;
+              const dir = require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'ocr-rules-'));
+              const ruleFile = require('path').join(dir, 'rules.json');
+              require('fs').writeFileSync(ruleFile, JSON.stringify(parsed, null, 2), { mode: 0o600 });
+              core.setOutput('rule_path', ruleFile);
+              core.notice(`Review rules${memory ? ' + project memory' : ''} loaded from ${refLabel} (${ref.slice(0, 12)}).`);
+              return true;
+            }
+
+            // Primary source: the IMMUTABLE base SHA - a PR must never review
+            // itself with rules it ships in the same diff.
+            const baseSha = process.env.BASE_SHA;
+            if (!/^[0-9a-f]{40}$/.test(baseSha)) {
+              core.setFailed('Trusted base SHA unavailable; refusing to load rules.');
+              return;
+            }
+            if (await loadFrom(baseSha, 'base SHA')) return;
+
+            // Fallback: branches that predate the rules file (long-lived PRs,
+            // Dependabot bumps opened before it landed) would otherwise run
+            // rule-less forever. Fall back to the default branch's CURRENT
+            // HEAD, resolved to an immutable SHA before use. Same trust
+            // anchor (owner-controlled repo content), just a moving one; it
+            // can only differ from a future base by commits already merged.
+            core.warning(`Rules file not present at base SHA (${baseSha.slice(0, 12)}); falling back to default branch HEAD.`);
+            const { data: repoInfo } = await github.rest.repos.get({ owner: owner, repo: repo });
+            const { data: headRef } = await github.rest.repos.getBranch({
+              owner: owner,
+              repo: repo,
+              branch: repoInfo.default_branch
+            });
+            const headSha = headRef.commit.sha;
+            if (!/^[0-9a-f]{40}$/.test(headSha)) {
+              core.setFailed(`Could not resolve default branch '${repoInfo.default_branch}' to a SHA; refusing to load rules.`);
+              return;
+            }
+            if (await loadFrom(headSha, `default branch '${repoInfo.default_branch}' HEAD`)) return;
+
+            // Neither tree carries the file (e.g. fresh fork without it).
+            core.warning('Rules file not found on base or default branch; proceeding without custom rules.');
+            core.setOutput('rule_path', '');
+
+      - name: Run OpenCodeReview
+        # v1.12.8 release commit (immutable pin; tag object 0e304c76 dereferences
+        # to this commit). Carries the GHSA-wwg6-qfxw-xffj fix forward from v1.11.1.
+        uses: alibaba/open-code-review@5c7b38381d1fdd36de6cf622a2a1f768243c4704 # v1.12.8
+        with:
+          # Pin the CLI to the same reviewed release; the Action default is 'latest'.
+          # The CLI is the component the advisory covers, and the Action installs
+          # whatever this input names (`npm install -g ...@${OCR_VERSION}`), so a
+          # repinned Action with a stale CLI here leaves GHSA-wwg6-qfxw-xffj open.
+          # v1.12.8 also gates on the CLI version: `effort` needs v1.10.0+ and
+          # `stream_progress` needs v1.9.8+ (action.yml 569-581), so a stale CLI
+          # here breaks those inputs rather than only the advisory.
+          ocr_version: '1.12.8'
+          llm_url: ${{ inputs.llm_url }}
+          llm_auth_token: ${{ secrets.auth_token }}
+          llm_model: ${{ inputs.llm_model }}
+          llm_use_anthropic: ${{ inputs.use_anthropic }}
+          # Issue #206 phase 1: the action default disables reasoning
+          # ({"thinking": {"type": "disabled"}}), which produced shallow,
+          # repetitive findings. Enable a bounded thinking budget instead.
+          # If the Kilo gateway ever stops forwarding Anthropic-style
+          # "thinking", swap this for '{"reasoning_effort": "medium"}'.
+          # Raised 10000 -> 15000 (issue #224 follow-up): the weak kilo-auto/free
+          # model needs more budget to trace cross-file data flow (Room
+          # migration / backup round-trip / personId links) so genuine
+          # data-integrity regressions are not dropped. Capped below the
+          # 24000 ceiling we trialed (PR #233 CodeAnt finding) so routine
+          # single-file reviews do not all incur max latency/cost; 15000
+          # is the compromise between coverage and per-request cost.
+          llm_extra_body: '{"thinking": {"type": "enabled", "budget_tokens": 15000}}'
+          # Reasoning extends per-request latency well beyond the CLI default;
+          # give each LLM request an explicit ceiling in seconds.
+          llm_timeout: '600'
+          # Custom review rules (JSON, see .github/ocr-rules.json) + project
+          # memory (Markdown, see .github/ocr-memory.md) injected together by
+          # the trusted-rules step above: real bugs / security / regressions
+          # only; style stays with ktlint/detekt/clippy; findings require stated
+          # confidence. The trusted-rules step appends ocr-memory.md to every
+          # rule entry so it applies to all matched file types.
+          # Resolved from the trusted base SHA by the step above (default
+          # branch HEAD as fallback for branches predating the rules file) -
+          # never from the action's PR-controlled checkout. Empty path => no --rule flag:
+          # the pinned action.yml guards with [ -n "$OCR_RULE" ] (line 985 of
+          # its run step), which skips set-but-empty values too,
+          # so built-in defaults apply.
+          rule: ${{ steps.trusted-rules.outputs.rule_path }}
+          # Noise reduction (issue #206 phase 1): weak findings move to the PR
+          # summary instead of inline comments. Fail-open upstream - nothing is
+          # dropped. Severity 'low' routes only low-severity findings;
+          # categories route style/documentation/maintainability chatter that
+          # ktlint/detekt already cover authoritatively.
+          # Each run gets its OWN summary comment (matched by this run's
+          # ocr-summary-run tag); retries within a run reuse it. The default
+          # ('true') updates one persistent sticky comment in place, which
+          # buries new findings under an ever-growing first comment on
+          # long-lived PRs. Stale-run cleanup is the audit step's job.
+          sticky_summary: 'false'
+          route_severity_below: 'low'
+          route_categories: 'style,documentation,maintainability'
+          # Explicit review output language (action default is already English).
+          language: 'English'
+          # Non-destructive inline dedupe (issue #206 phase 4). Verified
+          # against the pinned action (alibaba/open-code-review@5c7b3838…,
+          # action.yml lines 972-987): the "Run OpenCodeReview" step builds
+          #   ARGS=(--from … --to …), appends --format json --timeout …, adds
+          # --audience agent only when stream_progress is false (the default),
+          # and adds --rule / --effort / --max-tokens-budget only when their
+          # inputs are non-empty. It NEVER adds --incremental to `ocr review`.
+          # The `incremental` input is forwarded ONLY to the "Post review
+          # comments" step (incremental: ${{ inputs.incremental == 'true' }},
+          # action.yml line 1076) which calls runPostReviewComments; that helper
+          # skips inline comments whose (path, line range) overlaps an existing
+          # bot review comment.
+          # Consequently `ocr review > /tmp/ocr-result.json` always contains
+          # the FULL finding set. This is COUPLED to the resolver's full-set
+          # contract (see 'Audit stale OpenCodeReview threads' below, which
+          # reads /tmp/ocr-result.json to distinguish KEEP from RESOLVE). If a
+          # future repin ever forwards `incremental` to `ocr review`, the
+          # resolver would mis-resolve threads - re-verify action.yml then.
+          # Repeated runs on unchanged code never re-post the same finding and
+          # nothing is dropped.
+          # SAFE ONLY with alibaba/open-code-review@5c7b3838…; if you repin,
+          # re-verify action.yml does NOT forward --incremental to `ocr review`
+          # (the resolver reads the full /tmp/ocr-result.json set; see 'Audit
+          # stale OpenCodeReview threads' below and the CONTRACT VERIFIED note
+          # above for the same verification pattern).
+          incremental: 'true'
+          base_ref: ${{ steps.pr-context.outputs.base_ref }}
+          head_sha: ${{ steps.pr-context.outputs.head_sha }}
+
+      # CONTRACT VERIFIED (issue #206 PR #213; re-verified for the v1.12.8
+      # repin): the pinned action
+      # (alibaba/open-code-review@5c7b38381d1fdd36de6cf622a2a1f768243c4704, its
+      # run step, action.yml line 1003) exports OCR_EXIT_CODE to GITHUB_ENV
+      # on every path - 0 on success, non-zero on failure (and then force-exits
+      # the step non-zero, which stops this job). Both branches set it first: the
+      # stream_progress path at action.yml line 995 and the default path at line
+      # 1000, so the single export at line 1003 always sees a value. The guarded
+      # steps below rely on that var. If a future action version ever stops
+      # exporting it, fail the job loudly HERE instead of silently skipping the
+      # trusted-checkout restore below - which would let the audit load PR-head
+      # JavaScript.
+      - name: Assert OpenCodeReview result contract
+        if: env.OCR_EXIT_CODE == ''
+        run: |
+          echo "::error::OpenCodeReview did not export OCR_EXIT_CODE; refusing to run the trusted-checkout restore and audit against an untrusted workspace."
+          exit 1
+
+      # SECURITY: the OpenCodeReview action runs its own un-pinned checkout,
+      # which materializes the PR merge ref and replaces trusted code in the
+      # workspace. Restore the base tree before any repository file is loaded
+      # by require(), so the audit step never executes PR-head-controlled
+      # JavaScript. The ref is the IMMUTABLE base SHA captured by the event
+      # payload (pull_request_target) or the API snapshot (issue_comment), not
+      # a branch name - so a base branch advancing mid-run cannot swap in a
+      # different tree than the one reviewed. The guard makes that invariant
+      # explicit: anything other than a 40-hex SHA aborts instead of falling
+      # through to the checkout default, which would materialize PR-head code.
+      - name: Require resolved base SHA
+        if: env.OCR_EXIT_CODE == '0'
+        env:
+          BASE_SHA: ${{ steps.pr-context.outputs.base_sha || github.event.pull_request.base.sha }}
+        run: |
+          if ! printf '%s' "$BASE_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::Trusted base SHA unavailable; refusing to load audit code."
+            exit 1
+          fi
+
+      - name: Restore trusted base checkout
+        if: env.OCR_EXIT_CODE == '0'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.pr-context.outputs.base_sha || github.event.pull_request.base.sha }}
+          # Only this exact commit is needed; a shallow fetch keeps the
+          # restore fast and the workspace minimal.
+          fetch-depth: 1
+          # The OpenCodeReview action's own checkouts persist the runner
+          # GitHub token into the local git credential state. This trusted
+          # restore must not re-persist credentials, so no token survives
+          # into the environment where audit code is loaded and run.
+          persist-credentials: false
+          # Explicit: wipe any files left in the workspace by the action's
+          # internal merge-ref checkout before loading audit code.
+          clean: true
+
+      - name: Audit stale OpenCodeReview threads
+        # Issue #206 phase 3: absence from one stochastic LLM run is still not
+        # proof of staleness, so absence-only threads stay open. A candidate
+        # is auto-resolved ONLY when the diff between the finding's anchor
+        # commit (original_commit_id) and the current PR head proves the code
+        # at the finding's original location changed (deleted / renamed /
+        # hunk editing lines inside the original range). Every resolve posts a
+        # reply citing that evidence before the thread is closed. All I/O and
+        # decision glue lives here; the pure predicates live in the trusted
+        # ocr-resolve.js below.
+        if: env.OCR_EXIT_CODE == '0'
+        env:
+          # Same LLM gateway the OCR action itself uses, so the resolution pass
+          # can ask it to attribute prior (now-absent) findings to a commit.
+          LLM_URL: ${{ inputs.llm_url }}
+          LLM_MODEL: ${{ inputs.llm_model }}
+          LLM_USE_ANTHROPIC: ${{ inputs.use_anthropic }}
+          LLM_AUTH: ${{ secrets.auth_token }}
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const fs = require('fs');
+            // The audit only ever loads repository code from the restored
+            // trusted base tree - never from the PR head. A base branch that
+            // predates this script (old release branches, or a workflow/
+            // helper version skew after a partial merge) therefore has no
+            // resolver to load. Existence is checked BEFORE require(): a
+            // missing file skips the audit with a warning and keeps the job
+            // green; a resolver that EXISTS but fails to load (syntax error,
+            // init throw) propagates and fails loudly instead of being
+            // silently swallowed as "unavailable". Falling back to the
+            // PR-head copy is never an option - executing untrusted JS is
+            // exactly what the trusted checkout exists to prevent.
+            if (!fs.existsSync('./.github/scripts/ocr-resolve.js')) {
+              core.warning('Trusted audit script not present at base SHA; skipping stale-thread audit.');
+              return;
+            }
+            const { classifyThreads, isValidResultPayload, toOriginalRange, diffTouchesLocation, pickResolvingCommit, buildResolutionPrompt, buildRejudgePrompt, parseLlmResolutions, validateResolution } = require('./.github/scripts/ocr-resolve.js');
+
+            // Minimal LLM gateway client mirroring how the OCR action calls the
+            // same endpoint: OpenAI-compatible chat completions by default,
+            // Anthropic Messages API when useAnthropic is true. Returns the raw
+            // assistant text and throws on transport/HTTP errors so callers can
+            // fail open.
+            async function callLlmGateway({ url, model, auth, useAnthropic, prompt }) {
+              if (!url || !auth) throw new Error('LLM gateway url/auth not configured');
+              if (useAnthropic) {
+                const resp = await fetch(url, {
+                  method: 'POST',
+                  headers: { 'x-api-key': auth, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+                  body: JSON.stringify({ model, max_tokens: 1024, messages: [{ role: 'user', content: prompt }] }),
+                });
+                if (!resp.ok) throw new Error(`Anthropic gateway HTTP ${resp.status}`);
+                const json = await resp.json();
+                const text = json && json.content && json.content[0] && json.content[0].text;
+                if (typeof text !== 'string') throw new Error('unexpected Anthropic response shape');
+                return text;
+              }
+              const resp = await fetch(url, {
+                method: 'POST',
+                headers: { authorization: `Bearer ${auth}`, 'content-type': 'application/json' },
+                body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], temperature: 0 }),
+              });
+              if (!resp.ok) throw new Error(`LLM gateway HTTP ${resp.status}`);
+              const json = await resp.json();
+              const text = json && json.choices && json.choices[0] && json.choices[0].message && json.choices[0].message.content;
+              if (typeof text !== 'string') throw new Error('unexpected LLM response shape');
+              return text;
+            }
+
+            // Latest findings from the same runner filesystem. Only a payload
+            // matching the expected schema counts as available; anything else
+            // (unreadable, wrong shape, malformed entry) makes every decision
+            // UNCERTAIN (fail-safe).
+            let currentFindings = [];
+            let resultAvailable = false;
+            try {
+              const result = JSON.parse(fs.readFileSync('/tmp/ocr-result.json', 'utf8'));
+              if (isValidResultPayload(result)) {
+                currentFindings = result.comments;
+                resultAvailable = true;
+              } else {
+                core.warning('OCR result does not match the expected schema; treating it as unavailable.');
+              }
+            } catch (e) {
+              core.warning(`OCR result unreadable (${e.message}); every thread will be treated as uncertain.`);
+            }
+
+            const comments = await github.paginate(github.rest.pulls.listReviewComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+              per_page: 100
+            });
+
+            const decisions = classifyThreads({ reviewComments: comments, currentFindings, resultAvailable });
+
+            // Map each unresolved thread's root-comment databaseId to its
+            // GraphQL node id once - mutations need PRRT_ ids, REST ids are
+            // useless there (learned the hard way in PR #209's review rounds).
+            // Fail-open: a transient GraphQL error here must not fail the job;
+            // with an empty index every candidate is logged 'left open'.
+            const THREADS_QUERY = `
+              query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequest(number: $number) {
+                    reviewThreads(first: 100, after: $cursor) {
+                      pageInfo { hasNextPage endCursor }
+                      nodes {
+                        id
+                        isResolved
+                        comments(first: 1) { nodes { databaseId } }
+                      }
+                    }
+                  }
+                }
+              }`;
+            const threadByCommentId = new Map();
+            let threadsIndexed = true;
+            // Manual pagination: @actions/github v6 does NOT bundle
+            // @octokit/plugin-paginate-graphql, so github.graphql.paginate is
+            // undefined here and would silently no-op the whole phase inside
+            // the try/catch below (OCR bug-medium finding on PR #211).
+            try {
+              let cursor = null;
+              for (;;) {
+                const data = await github.graphql(THREADS_QUERY, {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  number: context.issue.number,
+                  cursor,
+                });
+                const conn = data.repository.pullRequest.reviewThreads;
+                for (const t of conn.nodes) {
+                  if (t.isResolved) continue;
+                  for (const c of t.comments.nodes) {
+                    threadByCommentId.set(String(c.databaseId), t.id);
+                  }
+                }
+                if (!conn.pageInfo.hasNextPage) break;
+                cursor = conn.pageInfo.endCursor;
+              }
+            } catch (e) {
+              threadsIndexed = false;
+              core.warning(`Thread index unavailable (${e.message}); no thread will be resolved this run.`);
+            }
+
+            // Current head of the PR: the diff base for every candidate.
+            let headSha = null;
+            try {
+              const { data: pr } = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.issue.number,
+              });
+              headSha = pr.head.sha;
+            } catch (e) {
+              core.warning(`Cannot resolve PR head (${e.message}); no thread will be resolved.`);
+            }
+
+            // Hard ceiling per run: a pathological payload must never mass-
+            // close threads. Evidence gathering is per-thread fail-safe: any
+            // API error logs a skip and moves on instead of aborting.
+            const MAX_AUTO_RESOLVES = 15;
+            let resolvedCount = 0;
+            // Collect {id, sha, url} for every finding the resolver closes, so
+            // the OpenCodeReview summary comment can be edited (not minimized)
+            // to cite the fixing commit(s) — CodeRabbit/Sourcery style.
+            const resolvedCitations = [];
+            // headSha is constant for the whole loop; candidates sharing an
+            // anchor commit reuse one comparison.
+            const compareCache = new Map();
+            // Same head per run: candidates reviewing the same path reuse one
+            // listCommits result instead of issuing a request per candidate.
+            const commitListCache = new Map();
+            // Absence-candidates the deterministic pass leaves open (code at
+            // the location unchanged, finding absent from the latest run) are
+            // collected here for the Phase R LLM attribution pass below.
+            const llmCandidates = [];
+            // Issue #224: still-reported (KEEP) findings whose anchor..head
+            // range may contain a commit that actually fixed them. Collected
+            // from the KEEP branch below and re-judged by the LLM in Phase R.
+            const rejudgeCandidates = [];
+
+            // Reply to an OCR thread AND mark it resolved (CodeRabbit-style:
+            // the Resolve conversation button, not just a reply). Shared by the
+            // deterministic and LLM resolution passes so the two reply+resolve
+            // mutations stay in lockstep. Fail-open: never claim a resolution we
+            // did not complete - a failed reply or resolve leaves the thread
+            // open, and we only bump resolvedCount on full success.
+            async function replyAndResolveThread({ threadId, body, id, reason }) {
+              try {
+                await github.graphql(
+                  `mutation($t: ID!, $body: String!) {
+                    addPullRequestReviewThreadReply(input: { pullRequestReviewThreadId: $t, body: $body }) { comment { id } }
+                  }`,
+                  { t: threadId, body }
+                );
+              } catch (e) {
+                core.warning(`Thread ${id}: reply failed (${e.message}); left open.`);
+                return false;
+              }
+              try {
+                await github.graphql(
+                  `mutation($t: ID!) {
+                    resolveReviewThread(input: { threadId: $t }) { thread { isResolved } }
+                  }`,
+                  { t: threadId }
+                );
+              } catch (e) {
+                core.warning(`Thread ${id}: resolve failed after reply (${e.message}); left open.`);
+                return false;
+              }
+              resolvedCount += 1;
+              core.info(`RESOLVED (${reason}): ${id}`);
+              return true;
+            }
+
+            for (const d of decisions) {
+              if (d.decision === 'KEEP') {
+                // Issue #224: a finding still reported by the latest OCR run is
+                // not auto-resolved by absence, but a commit in its
+                // anchor..head range may have genuinely fixed the underlying
+                // issue. Collect it for the Phase R LLM re-judgment pass, which
+                // asks the model to confirm a fixing commit (gated by the
+                // in-range + path-touch checks before any resolve). Fail-open:
+                // without the LLM configured, a usable location, or a mapped
+                // thread, we leave it open exactly as before.
+                if (!headSha || !threadsIndexed || !process.env.LLM_URL || !process.env.LLM_AUTH) {
+                  core.info(`KEEP: ${d.id} (${d.reason})`);
+                  continue;
+                }
+                if (rejudgeCandidates.length >= MAX_AUTO_RESOLVES) {
+                  core.info(`KEEP (re-judge cap ${MAX_AUTO_RESOLVES} reached): ${d.id}`);
+                  continue;
+                }
+                const comment = comments.find((c) => String(c.id) === d.threadKey);
+                const loc = comment ? toOriginalRange(comment) : null;
+                if (!loc) {
+                  core.info(`KEEP (no anchorable original location; left open): ${d.id}`);
+                  continue;
+                }
+                const threadId = threadByCommentId.get(d.threadKey);
+                if (!threadId) {
+                  core.info(`KEEP (no unresolved thread mapped; left open): ${d.id}`);
+                  continue;
+                }
+                // anchor..head diff: commits + changed files for the LLM prompt
+                // and the in-range SHA gate. Reuses compareCache.
+                let cmpCommits = [];
+                let changedFiles = [];
+                try {
+                  const basehead = `${loc.sha}..${headSha}`;
+                  let cmpData = compareCache.get(basehead);
+                  if (!cmpData) {
+                    const { data: cmp } = await github.rest.repos.compareCommits({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      basehead,
+                    });
+                    cmpData = cmp;
+                    compareCache.set(basehead, cmpData);
+                  }
+                  cmpCommits = cmpData.commits || [];
+                  changedFiles = cmpData.files || [];
+                  // Issue #224 / CodeAnt security findings (L876 Critical, L358 Major):
+                  // a still-reported finding may ONLY be re-judged when the code at its
+                  // OWN reported location actually changed across anchor..head. Otherwise an
+                  // unrelated same-file change (comment/import/whitespace) could close a
+                  // still-valid thread. Require location-level evidence, else leave it open.
+                  const verdict = diffTouchesLocation(cmpData.files, loc);
+                  if (!verdict.changed) {
+                    core.info(`KEEP (location ${loc.path}:${loc.start}-${loc.end} unchanged across ${loc.sha.slice(0, 12)}..${headSha.slice(0, 12)}; re-judge would be baseless; left open): ${d.id}`);
+                    continue;
+                  }
+                } catch (e) {
+                  core.warning(`KEEP ${d.id}: compare ${loc.sha.slice(0, 12)}..${headSha.slice(0, 12)} failed (${e.message}); left open.`);
+                  continue;
+                }
+                rejudgeCandidates.push({
+                  id: d.id,
+                  threadKey: d.threadKey,
+                  threadId,
+                  path: loc.path,
+                  start: loc.start,
+                  end: loc.end,
+                  anchor: loc.sha,
+                  body: comment.body || '',
+                  commits: cmpCommits.map((c) => ({ sha: c.sha, message: (c.commit && c.commit.message) || c.message || '' })).slice(0, 40),
+                  changedFiles: changedFiles.map((f) => f.filename),
+                  validShas: cmpCommits.map((c) => c.sha),
+                });
+                core.info(`KEEP (re-judge eligible): ${d.id} (${d.reason})`);
+                continue;
+              }
+              if (!d.candidate) {
+                if (d.decision === 'UNCERTAIN') core.info(`SKIPPED — UNCERTAIN: ${d.id} (${d.reason})`);
+                else core.info(`SKIPPED — NOT OCR: ${d.threadKey}`);
+                continue;
+              }
+              // Candidate: absent from the latest findings. Resolve only with
+              // hard diff evidence anchored to the original commit.
+              const comment = comments.find((c) => String(c.id) === d.threadKey);
+              const loc = comment ? toOriginalRange(comment) : null;
+              if (!loc) {
+                core.info(`RESOLVE-CANDIDATE (no anchorable original location; left open): ${d.id}`);
+                continue;
+              }
+              if (!headSha || !threadsIndexed || resolvedCount >= MAX_AUTO_RESOLVES) {
+                core.info(`RESOLVE-CANDIDATE (${!headSha ? "head unavailable" : !threadsIndexed ? "thread index unavailable" : `per-run ceiling ${MAX_AUTO_RESOLVES} reached`}): ${d.id} — left open`);
+                continue;
+              }
+              let verdict;
+              let cmpCommits = [];
+              let changedFiles = [];
+              try {
+                // TWO-dot range: the diff base must be the finding's own
+                // anchor commit. THREE-dot would anchor to the merge base,
+                // silently dropping changes between anchor and merge base.
+                const basehead = `${loc.sha}..${headSha}`;
+                // Cache the whole compare (files + commits) per anchor..head so
+                // the deterministic check and the LLM attribution pass below
+                // share one request; candidates sharing an anchor reuse it.
+                let cmpData = compareCache.get(basehead);
+                if (!cmpData) {
+                  const { data: cmp } = await github.rest.repos.compareCommits({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    basehead,
+                  });
+                  cmpData = cmp;
+                  compareCache.set(basehead, cmpData);
+                }
+                const files = cmpData.files;
+                cmpCommits = cmpData.commits || [];
+                changedFiles = files || [];
+                verdict = diffTouchesLocation(files, loc);
+              } catch (e) {
+                core.warning(`Candidate ${d.id}: compare ${loc.sha.slice(0, 12)}...${headSha.slice(0, 12)} failed (${e.message}); left open.`);
+                continue;
+              }
+              if (!verdict.changed) {
+                core.info(`RESOLVE-CANDIDATE (code unchanged; LLM re-check eligible): ${d.id} — ${verdict.reason}`);
+                if (process.env.LLM_URL && process.env.LLM_AUTH) {
+                  if (llmCandidates.length >= MAX_AUTO_RESOLVES) {
+                    core.info(`RESOLVE-CANDIDATE (LLM cap ${MAX_AUTO_RESOLVES} reached): ${d.id} — left open`);
+                  } else {
+                    const tId = threadByCommentId.get(d.threadKey);
+                    llmCandidates.push({
+                      id: d.id,
+                      threadKey: d.threadKey,
+                      threadId: tId,
+                      path: loc.path,
+                      start: loc.start,
+                      end: loc.end,
+                      anchor: loc.sha,
+                      body: comment.body || '',
+                      commits: cmpCommits.map((c) => ({ sha: c.sha, message: (c.commit && c.commit.message) || c.message || '' })).slice(0, 40),
+                      changedFiles: changedFiles.map((f) => f.filename),
+                      validShas: cmpCommits.map((c) => c.sha),
+                    });
+                  }
+                }
+                continue;
+              }
+              const threadId = threadByCommentId.get(d.threadKey);
+              if (!threadId) {
+                core.warning(`Candidate ${d.id}: no unresolved review thread maps to this comment; left open.`);
+                continue;
+              }
+              // Attribute the fix to the ACTUAL commit, not just the PR head:
+              // list commits touching the reviewed path (newest-first from
+              // head) and pick the newest one after the finding's anchor
+              // commit. Fail-safe: any error or an empty attribution falls
+              // back to the PR head SHA already held in `headSha`.
+              let resolvingCommit = headSha;
+              try {
+                const listKey = `${headSha}::${loc.path}`;
+                let fileCommits = commitListCache.get(listKey);
+                if (!fileCommits) {
+                  const { data } = await github.rest.repos.listCommits({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    sha: headSha,
+                    path: loc.path,
+                    per_page: 30,
+                  });
+                  fileCommits = data;
+                  commitListCache.set(listKey, fileCommits);
+                }
+                const picked = pickResolvingCommit(fileCommits.map((c) => c.sha), loc.sha);
+                if (picked) resolvingCommit = picked;
+              } catch (e) {
+                core.warning(`Candidate ${d.id}: could not attribute resolving commit (${e.message}); citing head.`);
+              }
+              try {
+                const shortSha = resolvingCommit.slice(0, 12);
+                const commitUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/commit/${resolvingCommit}`;
+                const replyBody = `Resolved by commit [${shortSha}](${commitUrl}): ${verdict.reason}. The reviewed code at ${loc.path}:${loc.start}-${loc.end} changed after this finding was posted (anchor ${loc.sha.slice(0, 12)}), so it no longer applies.`;
+                const ok = await replyAndResolveThread({ threadId, body: replyBody, id: d.id, reason: `diff evidence, cited ${shortSha}` });
+                if (ok) resolvedCitations.push({ id: d.id, sha: shortSha, url: commitUrl });
+              } catch (e) {
+                core.warning(`Candidate ${d.id}: resolution failed (${e.message}); left open.`);
+              }
+            }
+
+            // ---- Phase R (LLM): attribute absence-candidates to a real commit ----
+            // The deterministic pass already proved the code at each candidate
+            // location did NOT change, yet the finding is absent from the latest
+            // review run. A dedicated LLM pass may conclude such a prior finding
+            // was fixed elsewhere and cite the commit. Fail-open: any error skips
+            // the pass and leaves threads open; the cited commit must be in the
+            // finding's anchor..head range (see validateResolution).
+            let llmResolved = 0;
+            if (llmCandidates.length && process.env.LLM_URL && process.env.LLM_AUTH) {
+              try {
+                const prompt = buildResolutionPrompt({
+                  findings: llmCandidates.map((c) => ({
+                    id: c.id, path: c.path, start: c.start, end: c.end,
+                    anchor: c.anchor, body: c.body, commits: (c.commits || []).slice(0, 40),
+                  })),
+                });
+                const raw = await callLlmGateway({
+                  url: process.env.LLM_URL,
+                  model: process.env.LLM_MODEL,
+                  auth: process.env.LLM_AUTH,
+                  useAnthropic: process.env.LLM_USE_ANTHROPIC === 'true',
+                  prompt,
+                });
+                const { resolutions, errors } = parseLlmResolutions(raw);
+                for (const err of errors) core.warning(`LLM resolution parse: ${err}`);
+                const handledIds = new Set();
+                for (const res of resolutions) {
+                  // De-duplicate by id: the LLM may echo the same finding id more
+                  // than once. Processing a duplicate would re-post a reply to the
+                  // same thread (resolveReviewThread is idempotent, but the bot
+                  // reply is not). Skip any id we have already handled.
+                  if (handledIds.has(res.id)) { core.info(`LLM resolution duplicate id ${res.id}; skipped to avoid a repeat reply.`); continue; }
+                  if (resolvedCount >= MAX_AUTO_RESOLVES) break;
+                  handledIds.add(res.id);
+                  const cand = llmCandidates.find((c) => c.id === res.id);
+                  if (!cand) { core.info(`LLM cited unknown finding id ${res.id}; skipped.`); continue; }
+                  if (!cand.threadId) { core.info(`LLM resolution for ${res.id}: no unresolved thread mapped; skipped.`); continue; }
+                  // Gate 1 (pure): the cited commit must be in the finding's
+                  // anchor..head SHA set (exact SHA or unique >=7-hex prefix).
+                  const vSha = validateResolution(res, { commitShas: cand.validShas });
+                  if (!vSha.ok) { core.info(`LLM resolution for ${res.id} rejected: ${vSha.reason}; left open.`); continue; }
+                  // Gate 2 (relevance): confirm the cited commit actually touches
+                  // the finding's path, so an unrelated in-range commit (docs/typo)
+                  // cannot close a still-valid thread. Fail-open: any fetch error
+                  // leaves the thread open rather than resolving on an unchecked cite.
+                  let citedFiles = [];
+                  try {
+                    const { data: cdata } = await github.rest.repos.getCommit({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      ref: vSha.canonicalSha,
+                    });
+                    citedFiles = (cdata.files || []).map((f) => f.filename);
+                  } catch (e) {
+                    core.warning(`Path-relevance check for ${res.id} failed (${e.message}); left open.`);
+                    continue;
+                  }
+                  const v = validateResolution(res, {
+                    commitShas: cand.validShas,
+                    findingPath: cand.path,
+                    commitFiles: { [vSha.canonicalSha]: citedFiles },
+                  });
+                  if (!v.ok) { core.info(`LLM resolution for ${res.id} rejected: ${v.reason}; left open.`); continue; }
+                  try {
+                    const sha = v.canonicalSha || res.commit;
+                    const shortSha = sha.slice(0, 12);
+                    const commitUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/commit/${sha}`;
+                    const replyBody = `Resolved by commit [${shortSha}](${commitUrl}): ${res.reason}. This prior finding at ${cand.path}:${cand.start}-${cand.end} no longer applies (anchor ${cand.anchor.slice(0, 12)}..${shortSha}).`;
+                    const ok = await replyAndResolveThread({ threadId: cand.threadId, body: replyBody, id: res.id, reason: `LLM attribution, cited ${shortSha}` });
+                    if (ok) { llmResolved++; resolvedCitations.push({ id: res.id, sha: shortSha, url: commitUrl }); }
+                  } catch (e) {
+                    core.warning(`LLM resolution execution failed for ${res.id} (${e.message}); left open.`);
+                  }
+                }
+              } catch (e) {
+                core.warning(`LLM resolution pass failed (${e.message}); prior findings left open.`);
+              }
+            }
+
+            // ---- Phase R (LLM, issue #224): re-judge still-KEEP findings ----
+            // A finding the latest OCR run STILL reports (KEEP, not absence) is
+            // collected above. Here the LLM judges each against its own
+            // anchor..head commits and cites a fixing commit. The same safety
+            // gates as the absence pass apply (cited commit in range + touches
+            // the finding's path) before any resolveReviewThread. Fail-open:
+            // any error leaves threads open; the job stays green.
+            let rejudgeResolved = 0;
+            if (rejudgeCandidates.length && process.env.LLM_URL && process.env.LLM_AUTH) {
+              try {
+                const prompt = buildRejudgePrompt({
+                  findings: rejudgeCandidates.map((c) => ({
+                    id: c.id, path: c.path, start: c.start, end: c.end,
+                    anchor: c.anchor, body: c.body, commits: (c.commits || []).slice(0, 40),
+                  })),
+                });
+                const raw = await callLlmGateway({
+                  url: process.env.LLM_URL,
+                  model: process.env.LLM_MODEL,
+                  auth: process.env.LLM_AUTH,
+                  useAnthropic: process.env.LLM_USE_ANTHROPIC === 'true',
+                  prompt,
+                });
+                const { resolutions, errors } = parseLlmResolutions(raw);
+                for (const err of errors) core.warning(`LLM re-judge parse: ${err}`);
+                const handledIds = new Set();
+                for (const res of resolutions) {
+                  // De-duplicate by id (the LLM may echo the same finding id).
+                  if (handledIds.has(res.id)) { core.info(`LLM re-judge duplicate id ${res.id}; skipped to avoid a repeat reply.`); continue; }
+                  if (resolvedCount >= MAX_AUTO_RESOLVES) break;
+                  handledIds.add(res.id);
+                  const cand = rejudgeCandidates.find((c) => c.id === res.id);
+                  if (!cand) { core.info(`LLM re-judge cited unknown finding id ${res.id}; skipped.`); continue; }
+                  if (!cand.threadId) { core.info(`LLM re-judge for ${res.id}: no unresolved thread mapped; skipped.`); continue; }
+                  // Gate 1 (pure): the cited commit must be in the finding's
+                  // anchor..head SHA set (exact SHA or unique >=7-hex prefix).
+                  const vSha = validateResolution(res, { commitShas: cand.validShas });
+                  if (!vSha.ok) { core.info(`LLM re-judge for ${res.id} rejected: ${vSha.reason}; left open.`); continue; }
+                  // Gate 2 (relevance): confirm the cited commit actually touches
+                  // the finding's path, so an unrelated in-range commit cannot
+                  // close a still-valid thread. Fail-open on any fetch error.
+                  let citedFiles = [];
+                  try {
+                    const { data: cdata } = await github.rest.repos.getCommit({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      ref: vSha.canonicalSha,
+                    });
+                    citedFiles = (cdata.files || []).map((f) => f.filename);
+                  } catch (e) {
+                    core.warning(`Re-judge path-relevance check for ${res.id} failed (${e.message}); left open.`);
+                    continue;
+                  }
+                  const v = validateResolution(res, {
+                    commitShas: cand.validShas,
+                    findingPath: cand.path,
+                    commitFiles: { [vSha.canonicalSha]: citedFiles },
+                  });
+                  if (!v.ok) { core.info(`LLM re-judge for ${res.id} rejected: ${v.reason}; left open.`); continue; }
+                  try {
+                    const sha = v.canonicalSha || res.commit;
+                    const shortSha = sha.slice(0, 12);
+                    const commitUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/commit/${sha}`;
+                    const replyBody = `Resolved by commit [${shortSha}](${commitUrl}): ${res.reason}. This finding at ${cand.path}:${cand.start}-${cand.end} was still reported by the latest review, but a commit in ${cand.anchor.slice(0, 12)}..${shortSha} addresses the underlying issue.`;
+                    const ok = await replyAndResolveThread({ threadId: cand.threadId, body: replyBody, id: res.id, reason: `LLM re-judge, cited ${shortSha}` });
+                    if (ok) { rejudgeResolved++; resolvedCitations.push({ id: res.id, sha: shortSha, url: commitUrl }); }
+                  } catch (e) {
+                    core.warning(`LLM re-judge execution failed for ${res.id} (${e.message}); left open.`);
+                  }
+                }
+              } catch (e) {
+                core.warning(`LLM re-judge pass failed (${e.message}); still-reported findings left open.`);
+              }
+            }
+
+            // Reflect auto-resolutions on the OpenCodeReview summary comment
+            // itself (CodeRabbit/Sourcery style): edit the summary to cite the
+            // fixing commits instead of leaving the resolution only in the
+            // thread replies. Issue comments are editable by their author
+            // (github-actions[bot] === the workflow token), so we annotate
+            // rather than minimize. Fail-open: any error is a warning and the
+            // job stays green; a missing/already-annotated summary is skipped.
+            if (resolvedCitations.length) {
+              try {
+                const RES_NOTE = '<!-- ocr-resolution-note -->';
+                const allComments = await github.paginate(github.rest.issues.listComments, {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  per_page: 100
+                });
+                const ocrSummaries = allComments.filter((c) =>
+                  c.user && c.user.login === 'github-actions[bot]' &&
+                  typeof c.body === 'string' && c.body.includes('<!-- ocr-summary -->')
+                );
+                const active = ocrSummaries.length
+                  ? ocrSummaries.reduce((a, b) => (a.created_at > b.created_at ? a : b))
+                  : null;
+                if (active && !active.body.includes(RES_NOTE)) {
+                  const lines = resolvedCitations
+                    .map((r) => `- finding \`${r.id}\` → commit [\`${r.sha}\`](${r.url})`)
+                    .join('\n');
+                  const note = `\n\n---\n${RES_NOTE}\n✅ **Auto-resolved by OCR resolver** (${resolvedCitations.length} finding(s) via \`resolveReviewThread\`):\n${lines}`;
+                  await github.rest.issues.updateComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    comment_id: active.id,
+                    body: active.body + note
+                  });
+                  core.info(`Annotated OCR summary ${active.id} with ${resolvedCitations.length} resolution(s).`);
+                }
+              } catch (e) {
+                core.warning(`Could not annotate OCR summary with resolution note (${e.message}).`);
+              }
+            }
+
+            const candidates = decisions.filter((d) => d.candidate).length + rejudgeCandidates.length;
+            const byEvidence = resolvedCount - llmResolved - rejudgeResolved;
+            core.notice(`OpenCodeReview stale-thread audit: ${candidates} candidate(s), ${resolvedCount} resolved (${byEvidence} by diff evidence, ${llmResolved} by LLM absence-attribution, ${rejudgeResolved} by LLM re-judge of still-reported findings; ceiling ${MAX_AUTO_RESOLVES}).`);
+
+      # With sticky_summary disabled, every OCR run posts its OWN summary
+      # comment. Keep only the newest one visible: older summaries are
+      # superseded by definition (each describes a run whose findings have
+      # since been re-evaluated) and get annotated as SUPERSEDED instead of
+      # minimized. Issue comments are editable by their author
+      # (github-actions[bot] === the workflow token), so we append a marker
+      # note that links to the newest summary - exactly how CodeRabbit/
+      # Sourcery keep their own reports visible. Nothing is ever deleted.
+      # This step loads no repository JavaScript, so the trusted-checkout
+      # invariant is unaffected. Fail-open: an annotate failure logs a warning
+      # and keeps the job green (a visible, un-marked summary is preferable to
+      # a hidden one).
+      - name: Archive superseded OpenCodeReview summaries
+        if: env.OCR_EXIT_CODE == '0'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            // MARKER mirrors SUMMARY_MARKER in the pinned upstream helper
+            // (alibaba/open-code-review@4b6874b,
+            // scripts/github-actions/post-review-comments.js). The action is
+            // immutable-pinned, so this contract cannot drift underneath us;
+            // bump both together if the pin ever moves.
+            const MARKER = '<!-- ocr-summary -->';
+            const SUP_NOTE = '<!-- ocr-superseded-note -->';
+            // Fetch PR conversation comments via GraphQL so we can see the
+            // is_minimized state (REST listComments does not expose it). Legacy
+            // summaries minimized by the PREVIOUS deploy - before this change
+            // switched archive from `minimizeComment` to `updateComment` - must
+            // stay hidden: REST updateComment would otherwise un-minimize them
+            // and re-surface stale, intentionally-hidden reports. We skip
+            // minimized comments so only actively-visible summaries get the
+            // supersede note.
+            const q = `query($owner:String!,$repo:String!,$number:Int!,$first:Int!,$after:String){repository(owner:$owner,name:$repo){pullRequest(number:$number){comments(first:$first,after:$after){nodes{databaseId isMinimized body author{login} createdAt url}pageInfo{hasNextPage endCursor}}}}}`;
+            let all = [];
+            let after = null;
+            do {
+              const r = await github.graphql(q, { owner: context.repo.owner, repo: context.repo.repo, number: context.issue.number, first: 100, after });
+              all = all.concat(r.repository.pullRequest.comments.nodes);
+              after = r.repository.pullRequest.comments.pageInfo.hasNextPage ? r.repository.pullRequest.comments.pageInfo.endCursor : null;
+            } while (after);
+            const summaries = all.filter((c) =>
+              c.author && c.author.login === 'github-actions[bot]' &&
+              typeof c.body === 'string' && c.body.includes(MARKER) &&
+              !c.isMinimized
+            );
+            if (summaries.length <= 1) {
+              core.notice(`OpenCodeReview summaries: ${summaries.length} present (minimized legacy summaries excluded); nothing to archive.`);
+              return;
+            }
+            // comments are returned oldest-first; keep the newest visible.
+            const newest = summaries.reduce((a, b) => (a.createdAt > b.createdAt ? a : b));
+            let annotated = 0, failed = 0, alreadyAnnotated = 0;
+            for (const c of summaries) {
+              if (c.databaseId === newest.databaseId) continue;
+              // Idempotent across re-runs: a summary we already annotated in a
+              // prior run carries the sentinel marker, so we skip it instead of
+              // re-appending.
+              if (typeof c.body === 'string' && c.body.includes(SUP_NOTE)) {
+                alreadyAnnotated++;
+                continue;
+              }
+              try {
+                const note = `\n\n---\n${SUP_NOTE}\n⚠️ **Superseded** — a later OpenCodeReview run replaced this report. The newest summary is [here](${newest.url}).`;
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: c.databaseId,
+                  body: (typeof c.body === 'string' ? c.body : '') + note
+                });
+                annotated++;
+              } catch (e) {
+                failed++;
+                core.warning(`Could not annotate superseded summary ${c.databaseId}: ${e.message}`);
+              }
+            }
+            core.notice(`OpenCodeReview summary archive: kept ${newest.url}, annotated ${annotated} superseded (${alreadyAnnotated} already annotated, ${failed} failed).`);

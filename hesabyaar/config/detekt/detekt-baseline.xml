@@ -1,0 +1,347 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>CyclomaticComplexMethod:AiAssistantViewModel.kt:AiAssistantViewModel$fun fetchBudgetAdvice</ID>
+    <ID>CyclomaticComplexMethod:AnalyticsScreen.kt:@Composable private fun CombinedLineChartCard</ID>
+    <ID>CyclomaticComplexMethod:CustomTimePickerDialog.kt:@Composable fun CustomTimePickerDialog</ID>
+    <ID>CyclomaticComplexMethod:DashboardScreen.kt:@Composable fun DashboardScreen</ID>
+    <ID>CyclomaticComplexMethod:DashboardScreen.kt:@Composable fun ManualTransactionDialog</ID>
+    <ID>CyclomaticComplexMethod:InstallmentScreen.kt:@Composable fun InstallmentScreen</ID>
+    <ID>CyclomaticComplexMethod:JalaliDatePickerDialog.kt:@Composable fun JalaliDatePickerDialog</ID>
+    <ID>CyclomaticComplexMethod:MainActivity.kt:MainActivity$override fun onCreate</ID>
+    <ID>CyclomaticComplexMethod:PinScreen.kt:@Composable fun PinScreen</ID>
+    <ID>CyclomaticComplexMethod:ReportsScreen.kt:@Composable fun ReportsScreen</ID>
+    <ID>CyclomaticComplexMethod:SettingsScreen.kt:@Composable fun SecuritySection</ID>
+    <ID>CyclomaticComplexMethod:SettingsScreen.kt:@Composable fun SettingsScreen</ID>
+    <ID>CyclomaticComplexMethod:SettingsScreen.kt:@OptIn(ExperimentalMaterial3Api::class) @Composable fun AiConfigDialog</ID>
+    <ID>CyclomaticComplexMethod:SmartAssistantScreen.kt:@Composable fun ParsedResultCard</ID>
+    <ID>CyclomaticComplexMethod:SmartAssistantScreen.kt:@Composable fun SmartAssistantScreen</ID>
+    <ID>FunctionNaming:AmountQuickFillButtons.kt:@Composable fun AmountQuickFillButtons</ID>
+    <ID>FunctionNaming:AnalyticsScreen.kt:@Composable fun AnalyticsScreen</ID>
+    <ID>FunctionNaming:AnalyticsScreen.kt:@Composable private fun BankLoanStatusCard</ID>
+    <ID>FunctionNaming:AnalyticsScreen.kt:@Composable private fun BarChart</ID>
+    <ID>FunctionNaming:AnalyticsScreen.kt:@Composable private fun CategoryBreakdownCard</ID>
+    <ID>FunctionNaming:AnalyticsScreen.kt:@Composable private fun CircularProgress</ID>
+    <ID>FunctionNaming:AnalyticsScreen.kt:@Composable private fun CombinedLineChartCard</ID>
+    <ID>FunctionNaming:AnalyticsScreen.kt:@Composable private fun DebtCreditSummaryCard</ID>
+    <ID>FunctionNaming:AnalyticsScreen.kt:@Composable private fun DonutChart</ID>
+    <ID>FunctionNaming:AnalyticsScreen.kt:@Composable private fun InstallmentProgressCard</ID>
+    <ID>FunctionNaming:AnalyticsScreen.kt:@Composable private fun LoanStatusCard</ID>
+    <ID>FunctionNaming:AnalyticsScreen.kt:@Composable private fun MonthlyTrendCard</ID>
+    <ID>FunctionNaming:BalanceCard.kt:@Composable fun BalanceCard</ID>
+    <ID>FunctionNaming:BankLoanScreen.kt:@Composable fun BankLoanScreen</ID>
+    <ID>FunctionNaming:BankLoanScreen.kt:@Composable private fun AddBankLoanDialog</ID>
+    <ID>FunctionNaming:BankLoanScreen.kt:@Composable private fun BankLoanForm</ID>
+    <ID>FunctionNaming:BankLoanScreen.kt:@Composable private fun BankLoanItem</ID>
+    <ID>FunctionNaming:CategoryChip.kt:@Composable fun CategoryFilterChip</ID>
+    <ID>FunctionNaming:CategoryManagementScreen.kt:@Composable private fun CategoryItem</ID>
+    <ID>FunctionNaming:CategoryManagementScreen.kt:@OptIn(ExperimentalMaterial3Api::class) @Composable fun CategoryManagementScreen</ID>
+    <ID>FunctionNaming:CategoryManagementScreen.kt:@OptIn(ExperimentalMaterial3Api::class) @Composable private fun CategoryDialog</ID>
+    <ID>FunctionNaming:CustomTimePickerDialog.kt:@Composable fun CustomTimePickerDialog</ID>
+    <ID>FunctionNaming:DashboardScreen.kt:@Composable fun DashboardScreen</ID>
+    <ID>FunctionNaming:DashboardScreen.kt:@Composable fun DeleteConfirmationDialog</ID>
+    <ID>FunctionNaming:DashboardScreen.kt:@Composable fun ForecastDetailDialog</ID>
+    <ID>FunctionNaming:DashboardScreen.kt:@Composable fun InstallmentMiniItem</ID>
+    <ID>FunctionNaming:DashboardScreen.kt:@Composable fun JalaliDateTimePicker</ID>
+    <ID>FunctionNaming:DashboardScreen.kt:@Composable fun ManualTransactionDialog</ID>
+    <ID>FunctionNaming:DashboardScreen.kt:@Composable fun TransactionDetailDialog</ID>
+    <ID>FunctionNaming:DashboardScreen.kt:@Composable fun TransactionMiniItem</ID>
+    <ID>FunctionNaming:DashboardComponents.kt:@Composable internal fun DashboardHeader</ID>
+    <ID>FunctionNaming:DashboardComponents.kt:@Composable internal fun SmartForecastCard</ID>
+    <ID>FunctionNaming:DashboardComponents.kt:@Composable internal fun IncomeExpenseCards</ID>
+    <ID>FunctionNaming:DashboardComponents.kt:@Composable internal fun KpiCards</ID>
+    <ID>FunctionNaming:DashboardComponents.kt:@Composable internal fun DebtorCreditorCards</ID>
+    <ID>FunctionNaming:DashboardComponents.kt:@Composable internal fun SmartParsingBanner</ID>
+    <ID>FunctionNaming:DashboardComponents.kt:@Composable internal fun BankLoansSummaryCard</ID>
+    <ID>FunctionNaming:EmptyState.kt:@Composable fun EmptyState</ID>
+    <ID>FunctionNaming:HesabyarButton.kt:@Composable fun HesabyarButton</ID>
+    <ID>FunctionNaming:HesabyarButton.kt:@Composable private fun ButtonContent</ID>
+    <ID>FunctionNaming:HesabyarCard.kt:@Composable fun HesabyarCard</ID>
+    <ID>FunctionNaming:HesabyarChip.kt:@Composable fun HesabyarChip</ID>
+    <ID>FunctionNaming:HesabyarInputField.kt:@Composable fun HesabyarInputField</ID>
+    <ID>FunctionNaming:InstallmentItem.kt:@Composable fun InstallmentItem</ID>
+    <ID>FunctionNaming:InstallmentScreen.kt:@Composable fun InstallmentListItem</ID>
+    <ID>FunctionNaming:InstallmentScreen.kt:@Composable fun InstallmentScreen</ID>
+    <ID>FunctionNaming:JalaliDatePickerDialog.kt:@Composable fun JalaliDatePickerDialog</ID>
+    <ID>FunctionNaming:LoanItem.kt:@Composable fun LoanItem</ID>
+    <ID>FunctionNaming:LoanManagementScreen.kt:@Composable fun LoanListItem</ID>
+    <ID>FunctionNaming:LoanManagementScreen.kt:@Composable fun LoanManagementScreen</ID>
+    <ID>FunctionNaming:LoanManagementScreen.kt:@Composable private fun LoanTypeSelector</ID>
+    <ID>FunctionNaming:LockScreen.kt:@Composable fun LockScreen</ID>
+    <ID>FunctionNaming:PinScreen.kt:@Composable fun PinScreen</ID>
+    <ID>FunctionNaming:ReportsScreen.kt:@Composable fun ReportsScreen</ID>
+    <ID>FunctionNaming:SectionHeader.kt:@Composable fun SectionHeader</ID>
+    <ID>FunctionNaming:SettingsScreen.kt:@Composable fun ConfigItem</ID>
+    <ID>FunctionNaming:SettingsScreen.kt:@Composable fun DebugLogsSection</ID>
+    <ID>FunctionNaming:SettingsScreen.kt:@Composable fun ReminderSettingsSection</ID>
+    <ID>FunctionNaming:SettingsScreen.kt:@Composable fun SecuritySection</ID>
+    <ID>FunctionNaming:SettingsScreen.kt:@Composable fun SettingsScreen</ID>
+    <ID>FunctionNaming:SettingsScreen.kt:@OptIn(ExperimentalMaterial3Api::class) @Composable fun AiConfigDialog</ID>
+    <ID>FunctionNaming:SettingsScreen.kt:@OptIn(ExperimentalMaterial3Api::class) @Composable fun AiProviderSettingsCard</ID>
+    <ID>FunctionNaming:SmartAssistantScreen.kt:@Composable fun ConfirmationDialog</ID>
+    <ID>FunctionNaming:SmartAssistantScreen.kt:@Composable fun MarkdownText</ID>
+    <ID>FunctionNaming:SmartAssistantScreen.kt:@Composable fun ParsedResultCard</ID>
+    <ID>FunctionNaming:SmartAssistantScreen.kt:@Composable fun SmartAssistantScreen</ID>
+    <ID>FunctionNaming:Theme.kt:@Composable fun HesabyarTheme</ID>
+    <ID>FunctionNaming:DebtHubScreen.kt:@Composable fun DebtHubScreen</ID>
+    <ID>LongMethod:AnalyticsScreen.kt:@Composable fun AnalyticsScreen</ID>
+    <ID>LongMethod:AnalyticsScreen.kt:@Composable private fun BankLoanStatusCard</ID>
+    <ID>LongMethod:AnalyticsScreen.kt:@Composable private fun CategoryBreakdownCard</ID>
+    <ID>LongMethod:AnalyticsScreen.kt:@Composable private fun CombinedLineChartCard</ID>
+    <ID>LongMethod:AnalyticsScreen.kt:@Composable private fun DebtCreditSummaryCard</ID>
+    <ID>LongMethod:AnalyticsScreen.kt:@Composable private fun InstallmentProgressCard</ID>
+    <ID>LongMethod:AnalyticsScreen.kt:@Composable private fun LoanStatusCard</ID>
+    <ID>LongMethod:AppDatabase.kt:AppDatabase.Companion$private fun migratePlaintextToEncryptedIfNeeded</ID>
+    <ID>LongMethod:BalanceCard.kt:@Composable fun BalanceCard</ID>
+    <ID>LongMethod:BankLoanScreen.kt:@Composable private fun AddBankLoanDialog</ID>
+    <ID>LongMethod:CategoryManagementScreen.kt:@Composable private fun CategoryItem</ID>
+    <ID>LongMethod:CategoryManagementScreen.kt:@OptIn(ExperimentalMaterial3Api::class) @Composable fun CategoryManagementScreen</ID>
+    <ID>LongMethod:CategoryManagementScreen.kt:@OptIn(ExperimentalMaterial3Api::class) @Composable private fun CategoryDialog</ID>
+    <ID>LongMethod:CustomTimePickerDialog.kt:@Composable fun CustomTimePickerDialog</ID>
+    <ID>LongMethod:DashboardScreen.kt:@Composable fun DashboardScreen</ID>
+    <ID>LongMethod:DashboardScreen.kt:@Composable fun ForecastDetailDialog</ID>
+    <ID>LongMethod:DashboardScreen.kt:@Composable fun InstallmentMiniItem</ID>
+    <ID>LongMethod:DashboardScreen.kt:@Composable fun JalaliDateTimePicker</ID>
+    <ID>LongMethod:DashboardScreen.kt:@Composable fun ManualTransactionDialog</ID>
+    <ID>LongMethod:DashboardScreen.kt:@Composable fun TransactionDetailDialog</ID>
+    <ID>LongMethod:DashboardScreen.kt:@Composable fun TransactionMiniItem</ID>
+    <ID>LongMethod:DashboardComponents.kt:@Composable internal fun SmartForecastCard</ID>
+    <ID>LongMethod:DashboardComponents.kt:@Composable internal fun IncomeExpenseCards</ID>
+    <ID>LongMethod:DashboardComponents.kt:@Composable internal fun KpiCards</ID>
+    <ID>LongMethod:DashboardComponents.kt:@Composable internal fun DebtorCreditorCards</ID>
+    <ID>LongMethod:InstallmentScreen.kt:@Composable fun InstallmentListItem</ID>
+    <ID>LongMethod:InstallmentScreen.kt:@Composable fun InstallmentScreen</ID>
+    <ID>LongMethod:JalaliDatePickerDialog.kt:@Composable fun JalaliDatePickerDialog</ID>
+    <ID>LongMethod:LoanManagementScreen.kt:@Composable fun LoanListItem</ID>
+    <ID>LongMethod:LoanManagementScreen.kt:@Composable fun LoanManagementScreen</ID>
+    <ID>LongMethod:LockScreen.kt:@Composable fun LockScreen</ID>
+    <ID>LongMethod:MainActivity.kt:MainActivity$override fun onCreate</ID>
+    <ID>LongMethod:PinScreen.kt:@Composable fun PinScreen</ID>
+    <ID>LongMethod:ReportsScreen.kt:@Composable fun ReportsScreen</ID>
+    <ID>LongMethod:SettingsScreen.kt:@Composable fun DebugLogsSection</ID>
+    <ID>LongMethod:SettingsScreen.kt:@Composable fun ReminderSettingsSection</ID>
+    <ID>LongMethod:SettingsScreen.kt:@Composable fun SecuritySection</ID>
+    <ID>LongMethod:SettingsScreen.kt:@Composable fun SettingsScreen</ID>
+    <ID>LongMethod:SettingsScreen.kt:@OptIn(ExperimentalMaterial3Api::class) @Composable fun AiConfigDialog</ID>
+    <ID>LongMethod:SettingsScreen.kt:@OptIn(ExperimentalMaterial3Api::class) @Composable fun AiProviderSettingsCard</ID>
+    <ID>LongMethod:SmartAssistantScreen.kt:@Composable fun ConfirmationDialog</ID>
+    <ID>LongMethod:SmartAssistantScreen.kt:@Composable fun MarkdownText</ID>
+    <ID>LongMethod:SmartAssistantScreen.kt:@Composable fun ParsedResultCard</ID>
+    <ID>LongMethod:SmartAssistantScreen.kt:@Composable fun SmartAssistantScreen</ID>
+    <ID>LoopWithTooManyJumpStatements:InstallmentReminderWorker.kt:InstallmentReminderWorker$for</ID>
+    <ID>LoopWithTooManyJumpStatements:JalaliCalendarHelper.kt:JalaliCalendarHelper$for</ID>
+    <ID>LoopWithTooManyJumpStatements:LoanReminderWorker.kt:LoanReminderWorker$for</ID>
+    <ID>MagicNumber:AiAssistantViewModel.kt:AiAssistantViewModel$60</ID>
+    <ID>MagicNumber:AnalyticsScreen.kt:8f</ID>
+    <ID>MagicNumber:AuthManager.kt:AuthManager$1000L</ID>
+    <ID>MagicNumber:AuthManager.kt:AuthManager$60</ID>
+    <ID>MagicNumber:CategoryChip.kt:0.179f</ID>
+    <ID>MagicNumber:CategoryChip.kt:0.5f</ID>
+    <ID>MagicNumber:CategoryManagementScreen.kt:7</ID>
+    <ID>MagicNumber:CategoryManagementScreen.kt:8</ID>
+    <ID>MagicNumber:CurrencyFormatter.kt:CurrencyFormatter$0x06F0</ID>
+    <ID>MagicNumber:CurrencyFormatter.kt:CurrencyFormatter$10</ID>
+    <ID>MagicNumber:CustomTimePickerDialog.kt:1.3f</ID>
+    <ID>MagicNumber:CustomTimePickerDialog.kt:10f</ID>
+    <ID>MagicNumber:CustomTimePickerDialog.kt:12</ID>
+    <ID>MagicNumber:CustomTimePickerDialog.kt:220</ID>
+    <ID>MagicNumber:CustomTimePickerDialog.kt:255</ID>
+    <ID>MagicNumber:CustomTimePickerDialog.kt:360.0</ID>
+    <ID>MagicNumber:CustomTimePickerDialog.kt:6.0</ID>
+    <ID>MagicNumber:CustomTimePickerDialog.kt:60</ID>
+    <ID>MagicNumber:DashboardScreen.kt:0.85f</ID>
+    <ID>MagicNumber:DashboardScreen.kt:0.92f</ID>
+    <ID>MagicNumber:DashboardScreen.kt:0.95f</ID>
+    <ID>MagicNumber:DashboardScreen.kt:1.3f</ID>
+    <ID>MagicNumber:DashboardScreen.kt:150</ID>
+    <ID>MagicNumber:DashboardScreen.kt:3</ID>
+    <ID>MagicNumber:DashboardScreen.kt:5</ID>
+    <ID>MagicNumber:GeminiParser.kt:GeminiParser$0x0660</ID>
+    <ID>MagicNumber:GeminiParser.kt:GeminiParser$0x06F0</ID>
+    <ID>MagicNumber:GeminiParser.kt:GeminiParser$1_000</ID>
+    <ID>MagicNumber:GeminiParser.kt:GeminiParser$1_000_000</ID>
+    <ID>MagicNumber:GeminiParser.kt:GeminiParser$2</ID>
+    <ID>MagicNumber:InstallmentReminderWorker.kt:InstallmentReminderWorker$7</ID>
+    <ID>MagicNumber:JalaliCalendarHelper.kt:JalaliCalendarHelper$100</ID>
+    <ID>MagicNumber:JalaliCalendarHelper.kt:JalaliCalendarHelper$11</ID>
+    <ID>MagicNumber:JalaliCalendarHelper.kt:JalaliCalendarHelper$12</ID>
+    <ID>MagicNumber:JalaliCalendarHelper.kt:JalaliCalendarHelper$12053</ID>
+    <ID>MagicNumber:JalaliCalendarHelper.kt:JalaliCalendarHelper$12053L</ID>
+    <ID>MagicNumber:JalaliCalendarHelper.kt:JalaliCalendarHelper$1461</ID>
+    <ID>MagicNumber:JalaliCalendarHelper.kt:JalaliCalendarHelper$29</ID>
+    <ID>MagicNumber:JalaliCalendarHelper.kt:JalaliCalendarHelper$3</ID>
+    <ID>MagicNumber:JalaliCalendarHelper.kt:JalaliCalendarHelper$30</ID>
+    <ID>MagicNumber:JalaliCalendarHelper.kt:JalaliCalendarHelper$31</ID>
+    <ID>MagicNumber:JalaliCalendarHelper.kt:JalaliCalendarHelper$32</ID>
+    <ID>MagicNumber:JalaliCalendarHelper.kt:JalaliCalendarHelper$33</ID>
+    <ID>MagicNumber:JalaliCalendarHelper.kt:JalaliCalendarHelper$365</ID>
+    <ID>MagicNumber:JalaliCalendarHelper.kt:JalaliCalendarHelper$366</ID>
+    <ID>MagicNumber:JalaliCalendarHelper.kt:JalaliCalendarHelper$4</ID>
+    <ID>MagicNumber:JalaliCalendarHelper.kt:JalaliCalendarHelper$400</ID>
+    <ID>MagicNumber:JalaliCalendarHelper.kt:JalaliCalendarHelper$6</ID>
+    <ID>MagicNumber:JalaliCalendarHelper.kt:JalaliCalendarHelper$7</ID>
+    <ID>MagicNumber:JalaliCalendarHelper.kt:JalaliCalendarHelper$8</ID>
+    <ID>MagicNumber:JalaliDatePickerDialog.kt:1.2f</ID>
+    <ID>MagicNumber:JalaliDatePickerDialog.kt:1.3f</ID>
+    <ID>MagicNumber:JalaliDatePickerDialog.kt:12</ID>
+    <ID>MagicNumber:JalaliDatePickerDialog.kt:150</ID>
+    <ID>MagicNumber:JalaliDatePickerDialog.kt:6</ID>
+    <ID>MagicNumber:JalaliDatePickerDialog.kt:7</ID>
+    <ID>MagicNumber:NotificationHelper.kt:NotificationHelper$10000</ID>
+    <ID>MagicNumber:PinScreen.kt:3</ID>
+    <ID>MagicNumber:ReminderSettingsManager.kt:ReminderSettingsManager$23</ID>
+    <ID>MagicNumber:ReminderSettingsManager.kt:ReminderSettingsManager$30</ID>
+    <ID>MagicNumber:ReminderSettingsManager.kt:ReminderSettingsManager$59</ID>
+    <ID>MagicNumber:ReminderSettingsManager.kt:ReminderSettingsManager$7</ID>
+    <ID>MagicNumber:ReminderSettingsManager.kt:ReminderSettingsManager$8</ID>
+    <ID>MagicNumber:SettingsScreen.kt:1.1f</ID>
+    <ID>MagicNumber:SettingsScreen.kt:10</ID>
+    <ID>MagicNumber:SettingsScreen.kt:1000</ID>
+    <ID>MagicNumber:SettingsScreen.kt:20</ID>
+    <ID>MagicNumber:SettingsScreen.kt:6</ID>
+    <ID>MagicNumber:SettingsScreen.kt:8</ID>
+    <ID>MagicNumber:SmartAssistantScreen.kt:0.7f</ID>
+    <ID>MagicNumber:SmartAssistantScreen.kt:1.3f</ID>
+    <ID>MatchingDeclarationName:CustomTimePickerDialog.kt:TimePickerTab</ID>
+    <ID>MatchingDeclarationName:HesabyarButton.kt:ButtonVariant</ID>
+    <ID>MaxLineLength:AiProvider.kt:AiProvider$"generateContent: provider=${config.providerType}, model=${config.model}, isConfigured=${config.isConfigured}, apiKeyLength=${config.apiKey.length}"</ID>
+    <ID>MaxLineLength:AppDatabase.kt:AppDatabase.Companion.&lt;no name provided&gt;$"CREATE TABLE categories (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, name TEXT NOT NULL, key TEXT NOT NULL, icon TEXT NOT NULL, color INTEGER NOT NULL, type TEXT NOT NULL, isDefault INTEGER NOT NULL)"</ID>
+    <ID>MaxLineLength:AppDatabase.kt:AppDatabase.Companion.&lt;no name provided&gt;$"CREATE TABLE installments_new (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, title TEXT NOT NULL, amount INTEGER NOT NULL, dueDate INTEGER NOT NULL, isPaid INTEGER NOT NULL, reminderEnabled INTEGER NOT NULL, notes TEXT NOT NULL)"</ID>
+    <ID>MaxLineLength:AppDatabase.kt:AppDatabase.Companion.&lt;no name provided&gt;$"CREATE TABLE loans_new (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, personName TEXT NOT NULL, type TEXT NOT NULL, originalAmount INTEGER NOT NULL, remainingAmount INTEGER NOT NULL, description TEXT NOT NULL, date INTEGER NOT NULL, isSettled INTEGER NOT NULL)"</ID>
+    <ID>MaxLineLength:AppDatabase.kt:AppDatabase.Companion.&lt;no name provided&gt;$"CREATE TABLE payment_history_new (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, loanId INTEGER NOT NULL, amount INTEGER NOT NULL, date INTEGER NOT NULL, notes TEXT NOT NULL)"</ID>
+    <ID>MaxLineLength:AppDatabase.kt:AppDatabase.Companion.&lt;no name provided&gt;$"CREATE TABLE transactions_new (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, type TEXT NOT NULL, category TEXT NOT NULL, amount INTEGER NOT NULL, description TEXT NOT NULL, personName TEXT, date INTEGER NOT NULL, dueDate INTEGER, installmentId INTEGER)"</ID>
+    <ID>MaxLineLength:AppDatabase.kt:AppDatabase.Companion.&lt;no name provided&gt;$"CREATE TABLE transactions_new (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, type TEXT NOT NULL, categoryId INTEGER NOT NULL, amount INTEGER NOT NULL, description TEXT NOT NULL, personName TEXT, date INTEGER NOT NULL, dueDate INTEGER, installmentId INTEGER)"</ID>
+    <ID>MaxLineLength:AppDatabase.kt:AppDatabase.Companion.&lt;no name provided&gt;$"INSERT INTO installments_new (id, title, amount, dueDate, isPaid, reminderEnabled, notes) SELECT id, title, CAST(amount * 1000 AS INTEGER), dueDate, isPaid, reminderEnabled, notes FROM installments"</ID>
+    <ID>MaxLineLength:AppDatabase.kt:AppDatabase.Companion.&lt;no name provided&gt;$"INSERT INTO loans_new (id, personName, type, originalAmount, remainingAmount, description, date, isSettled) SELECT id, personName, type, CAST(originalAmount * 1000 AS INTEGER), CAST(remainingAmount * 1000 AS INTEGER), description, date, isSettled FROM loans"</ID>
+    <ID>MaxLineLength:AppDatabase.kt:AppDatabase.Companion.&lt;no name provided&gt;$"INSERT INTO payment_history_new (id, loanId, amount, date, notes) SELECT id, loanId, CAST(amount * 1000 AS INTEGER), date, notes FROM payment_history"</ID>
+    <ID>MaxLineLength:AppDatabase.kt:AppDatabase.Companion.&lt;no name provided&gt;$"INSERT INTO transactions_new (id, type, category, amount, description, personName, date, dueDate, installmentId) SELECT id, type, category, CAST(amount * 1000 AS INTEGER), description, personName, date, dueDate, installmentId FROM transactions"</ID>
+    <ID>PrintStackTrace:SmartAssistantScreen.kt:e</ID>
+    <ID>ReturnCount:AiProvider.kt:AiProvider$private fun callOpenAiCompatible: ApiResult</ID>
+    <ID>ReturnCount:AiProviderConfig.kt:AiConfigManager$fun getCachedModels: ModelCacheEntry?</ID>
+    <ID>ReturnCount:AppDatabase.kt:AppDatabase.Companion$fun getDatabase: AppDatabase</ID>
+    <ID>ReturnCount:GeminiParser.kt:GeminiParser$internal fun kotlinFallbackParse: ParsedResult?</ID>
+    <ID>ReturnCount:GeminiParser.kt:GeminiParser$private fun detectCategory: String</ID>
+    <ID>ReturnCount:GeminiParser.kt:GeminiParser$private fun detectType: String</ID>
+    <ID>ReturnCount:GeminiParser.kt:GeminiParser$private fun extractAmount: Long?</ID>
+    <ID>ReturnCount:HesabyarApp.kt:HesabyarApp.Companion$@JvmStatic fun ensureRustInitialized: Boolean</ID>
+    <ID>ReturnCount:HesabyarRepository.kt:HesabyarRepository$override suspend fun addPaymentToLoan: Boolean</ID>
+    <ID>ReturnCount:JalaliCalendarHelper.kt:JalaliCalendarHelper$fun gregorianToJalaliLocal: JalaliDate?</ID>
+    <ID>ReturnCount:JalaliCalendarHelper.kt:JalaliCalendarHelper$fun jalaliToGregorianLocal: Calendar?</ID>
+    <ID>ReturnCount:PinStorage.kt:PinStorage$fun verifyPin: Boolean</ID>
+    <ID>ReturnCount:PinStorage.kt:PinStorage$private fun getPrefs: SharedPreferences</ID>
+    <ID>SerialVersionUIDInSerializableClass:Entities.kt:Category : Serializable</ID>
+    <ID>SerialVersionUIDInSerializableClass:Entities.kt:Installment : Serializable</ID>
+    <ID>SerialVersionUIDInSerializableClass:Entities.kt:Loan : Serializable</ID>
+    <ID>SerialVersionUIDInSerializableClass:Entities.kt:PaymentHistory : Serializable</ID>
+    <ID>SerialVersionUIDInSerializableClass:Entities.kt:Transaction : Serializable</ID>
+    <ID>SwallowedException:AiProviderConfig.kt:AiConfigManager$e: IllegalArgumentException</ID>
+    <ID>ThrowsCount:AiProvider.kt:AiProvider$private fun fetchCustomModels: List&lt;FetchedModel&gt;</ID>
+    <ID>TooGenericExceptionCaught:AiAssistantViewModel.kt:AiAssistantViewModel$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:AiProvider.kt:AiProvider$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:AiProviderConfig.kt:AiConfigManager$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:AppDatabase.kt:AppDatabase.Companion$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:SettingsScreen.kt:e: Exception</ID>
+    <ID>TooGenericExceptionCaught:SmartAssistantScreen.kt:e: Exception</ID>
+    <ID>TooGenericExceptionThrown:DatabaseKeyManager.kt:DatabaseKeyManager$throw RuntimeException("Failed to create encrypted preferences", e)</ID>
+    <ID>TooManyFunctions:AiAssistantViewModel.kt:AiAssistantViewModel : ViewModel</ID>
+    <ID>TooManyFunctions:AiProviderConfig.kt:AiConfigManager</ID>
+    <ID>TooManyFunctions:ExcelExporter.kt:ExcelExporter</ID>
+    <ID>TooManyFunctions:CurrencyFormatter.kt:CurrencyFormatter</ID>
+    <ID>TooManyFunctions:GeminiParser.kt:GeminiParser</ID>
+    <ID>TooManyFunctions:HesabyarRepositoryInterface.kt:HesabyarRepositoryInterface</ID>
+    <ID>TooManyFunctions:JalaliCalendarHelper.kt:JalaliCalendarHelper</ID>
+    <ID>TooManyFunctions:ManageAiConfigUseCase.kt:ManageAiConfigUseCase</ID>
+    <ID>LargeClass:GetDashboardDataUseCaseTest.kt:GetDashboardDataUseCaseTest</ID>
+    <ID>TooManyFunctions:RustMappers.kt:RustMappers</ID>
+    <ID>TooManyFunctions:UseCaseModule.kt:UseCaseModule</ID>
+    <ID>UnnecessaryParentheses:AnalyticsScreen.kt:(item.total.toFloat() / total)</ID>
+    <ID>UnnecessaryParentheses:AnalyticsScreen.kt:(loan.remainingAmount.toFloat() / loan.originalAmount)</ID>
+    <ID>UnnecessaryParentheses:AnalyticsScreen.kt:(paid * 100 / total)</ID>
+    <ID>UnnecessaryParentheses:AnalyticsScreen.kt:(value.toFloat() / maxValue)</ID>
+    <ID>UnnecessaryParentheses:CustomTimePickerDialog.kt:(Math.round(angle / 6.0).toInt() % 60)</ID>
+    <ID>UnnecessaryParentheses:JalaliDatePickerDialog.kt:(index % 7)</ID>
+    <ID>UnnecessaryParentheses:ParseTransactionUseCase.kt:ParseTransactionUseCase$(System.currentTimeMillis() + (days * 24L * 60L * 60L * 1000L))</ID>
+    <ID>UnnecessaryParentheses:ParseTransactionUseCase.kt:ParseTransactionUseCase$(days * 24L * 60L * 60L * 1000L)</ID>
+    <ID>UnnecessaryParentheses:ReportsScreen.kt:(now % (24L * 60 * 60 * 1000))</ID>
+    <ID>UnusedParameter:SettingsScreen.kt:settingsViewModel: SettingsViewModel</ID>
+    <ID>WildcardImport:AiAssistantViewModel.kt:import io.github.mojri.hesabyar.data.*</ID>
+    <ID>WildcardImport:AiAssistantViewModel.kt:import kotlinx.coroutines.flow.*</ID>
+    <ID>WildcardImport:AnalyticsScreen.kt:import androidx.compose.animation.core.*</ID>
+    <ID>WildcardImport:AnalyticsScreen.kt:import androidx.compose.foundation.layout.*</ID>
+    <ID>WildcardImport:AnalyticsScreen.kt:import androidx.compose.material.icons.filled.*</ID>
+    <ID>WildcardImport:AnalyticsScreen.kt:import androidx.compose.material3.*</ID>
+    <ID>WildcardImport:AnalyticsScreen.kt:import androidx.compose.runtime.*</ID>
+    <ID>WildcardImport:AnalyticsScreen.kt:import io.github.mojri.hesabyar.ui.*</ID>
+    <ID>WildcardImport:BalanceCard.kt:import androidx.compose.foundation.layout.*</ID>
+    <ID>WildcardImport:CategoryChip.kt:import androidx.compose.foundation.layout.*</ID>
+    <ID>WildcardImport:CategoryManagementScreen.kt:import androidx.compose.animation.*</ID>
+    <ID>WildcardImport:CategoryManagementScreen.kt:import androidx.compose.foundation.layout.*</ID>
+    <ID>WildcardImport:CategoryManagementScreen.kt:import androidx.compose.material.icons.filled.*</ID>
+    <ID>WildcardImport:CategoryManagementScreen.kt:import androidx.compose.material3.*</ID>
+    <ID>WildcardImport:CategoryManagementScreen.kt:import androidx.compose.runtime.*</ID>
+    <ID>WildcardImport:CategoryViewModel.kt:import kotlinx.coroutines.flow.*</ID>
+    <ID>WildcardImport:CustomTimePickerDialog.kt:import androidx.compose.animation.*</ID>
+    <ID>WildcardImport:CustomTimePickerDialog.kt:import androidx.compose.foundation.layout.*</ID>
+    <ID>WildcardImport:CustomTimePickerDialog.kt:import androidx.compose.material3.*</ID>
+    <ID>WildcardImport:CustomTimePickerDialog.kt:import androidx.compose.runtime.*</ID>
+    <ID>WildcardImport:DashboardScreen.kt:import androidx.compose.animation.*</ID>
+    <ID>WildcardImport:DashboardScreen.kt:import androidx.compose.foundation.layout.*</ID>
+    <ID>WildcardImport:DashboardScreen.kt:import androidx.compose.material.icons.filled.*</ID>
+    <ID>WildcardImport:DashboardScreen.kt:import androidx.compose.material3.*</ID>
+    <ID>WildcardImport:DashboardComponents.kt:import androidx.compose.animation.*</ID>
+    <ID>WildcardImport:DashboardComponents.kt:import androidx.compose.foundation.layout.*</ID>
+    <ID>WildcardImport:DashboardComponents.kt:import androidx.compose.material.icons.filled.*</ID>
+    <ID>WildcardImport:DashboardComponents.kt:import androidx.compose.material3.*</ID>
+    <ID>WildcardImport:EmptyState.kt:import androidx.compose.foundation.layout.*</ID>
+    <ID>WildcardImport:InstallmentItem.kt:import androidx.compose.foundation.layout.*</ID>
+    <ID>WildcardImport:InstallmentScreen.kt:import androidx.compose.animation.*</ID>
+    <ID>WildcardImport:InstallmentScreen.kt:import androidx.compose.foundation.layout.*</ID>
+    <ID>WildcardImport:InstallmentScreen.kt:import androidx.compose.material.icons.filled.*</ID>
+    <ID>WildcardImport:InstallmentScreen.kt:import androidx.compose.material3.*</ID>
+    <ID>WildcardImport:InstallmentScreen.kt:import androidx.compose.runtime.*</ID>
+    <ID>WildcardImport:InstallmentViewModel.kt:import kotlinx.coroutines.flow.*</ID>
+    <ID>WildcardImport:JalaliDatePickerDialog.kt:import androidx.compose.animation.*</ID>
+    <ID>WildcardImport:JalaliDatePickerDialog.kt:import androidx.compose.foundation.layout.*</ID>
+    <ID>WildcardImport:JalaliDatePickerDialog.kt:import androidx.compose.foundation.lazy.grid.*</ID>
+    <ID>WildcardImport:JalaliDatePickerDialog.kt:import androidx.compose.material3.*</ID>
+    <ID>WildcardImport:JalaliDatePickerDialog.kt:import androidx.compose.runtime.*</ID>
+    <ID>WildcardImport:LoanItem.kt:import androidx.compose.foundation.layout.*</ID>
+    <ID>WildcardImport:LoanManagementScreen.kt:import androidx.compose.animation.*</ID>
+    <ID>WildcardImport:LoanManagementScreen.kt:import androidx.compose.foundation.layout.*</ID>
+    <ID>WildcardImport:LoanManagementScreen.kt:import androidx.compose.material.icons.filled.*</ID>
+    <ID>WildcardImport:LoanManagementScreen.kt:import androidx.compose.material3.*</ID>
+    <ID>WildcardImport:LoanManagementScreen.kt:import androidx.compose.runtime.*</ID>
+    <ID>WildcardImport:LoanViewModel.kt:import kotlinx.coroutines.flow.*</ID>
+    <ID>WildcardImport:LockScreen.kt:import androidx.compose.foundation.layout.*</ID>
+    <ID>WildcardImport:LockScreen.kt:import androidx.compose.material3.*</ID>
+    <ID>WildcardImport:LockScreen.kt:import androidx.compose.runtime.*</ID>
+    <ID>WildcardImport:MainActivity.kt:import androidx.compose.foundation.layout.*</ID>
+    <ID>WildcardImport:MainActivity.kt:import androidx.compose.material.icons.filled.*</ID>
+    <ID>WildcardImport:MainActivity.kt:import androidx.compose.material3.*</ID>
+    <ID>WildcardImport:MainActivity.kt:import androidx.compose.runtime.*</ID>
+    <ID>WildcardImport:MainActivity.kt:import io.github.mojri.hesabyar.ui.*</ID>
+    <ID>WildcardImport:MainActivity.kt:import io.github.mojri.hesabyar.ui.screens.*</ID>
+    <ID>WildcardImport:PinScreen.kt:import androidx.compose.foundation.layout.*</ID>
+    <ID>WildcardImport:PinScreen.kt:import androidx.compose.material3.*</ID>
+    <ID>WildcardImport:PinScreen.kt:import androidx.compose.runtime.*</ID>
+    <ID>WildcardImport:ReportsScreen.kt:import androidx.compose.animation.*</ID>
+    <ID>WildcardImport:ReportsScreen.kt:import androidx.compose.foundation.layout.*</ID>
+    <ID>WildcardImport:ReportsScreen.kt:import androidx.compose.material.icons.filled.*</ID>
+    <ID>WildcardImport:ReportsScreen.kt:import androidx.compose.material3.*</ID>
+    <ID>WildcardImport:ReportsScreen.kt:import androidx.compose.runtime.*</ID>
+    <ID>WildcardImport:SectionHeader.kt:import androidx.compose.foundation.layout.*</ID>
+    <ID>WildcardImport:SettingsScreen.kt:import androidx.compose.animation.*</ID>
+    <ID>WildcardImport:SettingsScreen.kt:import androidx.compose.foundation.layout.*</ID>
+    <ID>WildcardImport:SettingsScreen.kt:import androidx.compose.material.icons.filled.*</ID>
+    <ID>WildcardImport:SettingsScreen.kt:import androidx.compose.material3.*</ID>
+    <ID>WildcardImport:SettingsScreen.kt:import androidx.compose.runtime.*</ID>
+    <ID>WildcardImport:SmartAssistantScreen.kt:import androidx.compose.animation.*</ID>
+    <ID>WildcardImport:SmartAssistantScreen.kt:import androidx.compose.foundation.layout.*</ID>
+    <ID>WildcardImport:SmartAssistantScreen.kt:import androidx.compose.material.icons.filled.*</ID>
+    <ID>WildcardImport:SmartAssistantScreen.kt:import androidx.compose.material3.*</ID>
+    <ID>WildcardImport:SmartAssistantScreen.kt:import androidx.compose.runtime.*</ID>
+    <ID>WildcardImport:TransactionItem.kt:import androidx.compose.foundation.layout.*</ID>
+    <ID>WildcardImport:TransactionViewModel.kt:import kotlinx.coroutines.flow.*</ID>
+  </CurrentIssues>
+</SmellBaseline>

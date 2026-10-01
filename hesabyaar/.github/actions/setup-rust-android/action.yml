@@ -1,0 +1,47 @@
+name: Setup Rust for Android
+description: Install Rust toolchain with Android targets, cargo-ndk, and NDK
+
+inputs:
+  rust-toolchain:
+    description: Rust toolchain version
+    default: stable
+  cargo-ndk-version:
+    description: cargo-ndk version
+    default: "3.5.2"
+  ndk-version:
+    description: Android NDK version
+    default: "27.0.12077973"
+
+runs:
+  using: composite
+  steps:
+    - name: Install Rust toolchain
+      # The SHA pins the action's known-version table, not the installed
+      # toolchain. The toolchain resolves through rust/rust-toolchain.toml,
+      # which pins the channel to "stable".
+      uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable (version table; toolchain from rust-toolchain.toml) # zizmor: ignore[impostor-commit]
+      with:
+        toolchain: ${{ inputs.rust-toolchain }}
+        targets: aarch64-linux-android, armv7-linux-androideabi, i686-linux-android, x86_64-linux-android
+
+    - name: Install cargo-ndk
+      shell: bash
+      env:
+        CARGO_NDK_VERSION: ${{ inputs.cargo-ndk-version }}
+      run: cargo install cargo-ndk --version "$CARGO_NDK_VERSION" --locked
+
+    - name: Set up Android NDK
+      shell: bash
+      env:
+        NDK_VERSION: ${{ inputs.ndk-version }}
+      run: |
+        export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+        sdkmanager "ndk;$NDK_VERSION"
+
+    - name: Export ANDROID_NDK_HOME
+      shell: bash
+      env:
+        NDK_VERSION: ${{ inputs.ndk-version }}
+      # NDK_VERSION is a caller-supplied input, not untrusted PR text, and the
+      # value reaches GITHUB_ENV as one quoted assignment on a single line.
+      run: echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV" # zizmor: ignore[github-env]

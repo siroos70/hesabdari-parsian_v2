@@ -1,0 +1,90 @@
+# Unit tests for the OCR stale-thread audit decision core. Pure node:test;
+# no framework, no setup-node needed (ubuntu-latest ships a current Node).
+name: OCR Resolver Tests
+
+on:
+  push:
+    paths:
+      - ".github/scripts/**"
+      - ".github/workflows/ocr-resolver-tests.yml"
+  pull_request:
+    paths:
+      - ".github/scripts/**"
+      - ".github/workflows/ocr-resolver-tests.yml"
+
+permissions:
+  contents: read
+
+# Push and pull_request fire for the same commit; cancel superseded runs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      DEEPSOURCE_DSN: ${{ secrets.DEEPSOURCE_DSN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run OCR resolver tests with coverage
+        run: node --test --experimental-test-coverage --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=junit-ocr.xml --test-reporter=lcov --test-reporter-destination=coverage-ocr.lcov .github/scripts/ocr-resolve.test.mjs
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage-ocr.lcov
+          flags: scripts
+          fail_ci_if_error: false
+
+      - name: Upload coverage to Coveralls
+        uses: coverallsapp/github-action@8d6379e14d29928660c4ba802d8e85393440b329 # v2.3.8
+        continue-on-error: true
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repo-token: ${{ secrets.COVERALLS_REPO_TOKEN }}
+          file: coverage-ocr.lcov
+          format: lcov
+          flag-name: ocr-scripts
+
+      - name: Upload coverage to Qlty Cloud
+        uses: qltysh/qlty-action/coverage@c9b09987143d1e4ac955f4803c7bea742102feb5 # v2.4.0
+        continue-on-error: true
+        with:
+          token: ${{ secrets.QLTY_COVERAGE_TOKEN }}
+          files: coverage-ocr.lcov
+
+      - name: Set up DeepSource CLI
+        id: setup-deepsource
+        if: ${{ env.DEEPSOURCE_DSN != '' }}
+        continue-on-error: true
+        uses: ./.github/actions/setup-deepsource-cli
+
+      - name: Upload coverage to DeepSource
+        if: ${{ env.DEEPSOURCE_DSN != '' && steps.setup-deepsource.outcome == 'success' }}
+        continue-on-error: true
+        env:
+          DEEPSOURCE_DSN: ${{ secrets.DEEPSOURCE_DSN }}
+        run: |
+          deepsource report --analyzer test-coverage --key javascript --value-file coverage-ocr.lcov
+
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3 # v1.2.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: junit-ocr.xml
+          fail_ci_if_error: false
+
+      - name: Upload test results to BuildPulse
+        if: always()
+        uses: BuildPulseLLC/test-reporter-action@329c479061feca84382766b3a342a7368a6d8f4c # v3.1.0
+        continue-on-error: true
+        with:
+          api-token: ${{ secrets.BUILDPULSE_API_TOKEN }}
+          path: junit-ocr.xml
+          coverage-files: coverage-ocr.lcov

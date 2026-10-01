@@ -1,0 +1,117 @@
+# Codecov configuration for Hesabyar
+# Supports multi-language coverage: Android (Kotlin), Rust Core, and Scripts.
+
+codecov:
+  require_ci_to_pass: false
+
+coverage:
+  precision: 2
+  round: down
+  range: "70...100"
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+      android:
+        target: auto
+        threshold: 1%
+        flags:
+          - android
+      rust:
+        target: auto
+        threshold: 1%
+        flags:
+          - rust
+      scripts:
+        target: auto
+        threshold: 1%
+        flags:
+          - scripts
+    patch:
+      default:
+        target: auto
+        threshold: 1%
+
+flags:
+  android:
+    paths:
+      - app/src/main/
+    carryforward: true
+  rust:
+    paths:
+      - rust/hesabyar-core/
+    carryforward: true
+  scripts:
+    paths:
+      - scripts/
+      - .github/scripts/
+    carryforward: true
+
+ignore:
+  - "**/*Test*.kt"
+  - "**/test/**"
+  - "**/tests/**"
+  - "**/androidTest/**"
+  - "**/*.test.*"
+  - "**/test-*.*"
+  - "app/src/main/java/io/github/mojri/hesabyar/rust/hesabyar_core.kt" # Generated UniFFI Kotlin bindings
+  - "rust/hesabyar-core/src/generated/**" # Generated core version
+  - "rust/uniffi-gen/**"
+
+comment:
+  layout: "reach,diff,flags,components,files"
+  behavior: default
+  require_changes: false
+
+component_management:
+  individual_components:
+    - component_id: rust_core
+      name: "Rust Core"
+      paths:
+        - rust/hesabyar-core/**
+      flag_regexes:
+        - "^rust$"
+
+    - component_id: android_domain
+      name: "Android Domain, API & Core"
+      paths:
+        - app/src/main/java/io/github/mojri/hesabyar/domain/**
+        - app/src/main/java/io/github/mojri/hesabyar/api/**
+        - app/src/main/java/io/github/mojri/hesabyar/core/**
+      flag_regexes:
+        - "^android$"
+
+    - component_id: android_data
+      name: "Android Data & Storage"
+      paths:
+        - app/src/main/java/io/github/mojri/hesabyar/data/**
+        - app/src/main/java/io/github/mojri/hesabyar/auth/**
+        - app/src/main/java/io/github/mojri/hesabyar/di/**
+        - app/src/main/java/io/github/mojri/hesabyar/reminder/**
+      flag_regexes:
+        - "^android$"
+
+    - component_id: android_ui
+      name: "Android UI & App"
+      paths:
+        - app/src/main/java/io/github/mojri/hesabyar/ui/**
+        - app/src/main/java/io/github/mojri/hesabyar/HesabyarApp.kt
+        - app/src/main/java/io/github/mojri/hesabyar/MainActivity.kt
+      flag_regexes:
+        - "^android$"
+
+    - component_id: android_bridge
+      name: "Android Rust Bridge"
+      paths:
+        - app/src/main/java/io/github/mojri/hesabyar/rust/**
+      flag_regexes:
+        - "^android$"
+
+    - component_id: scripts
+      name: "Scripts & Automation"
+      paths:
+        - scripts/**
+        - .github/scripts/**
+      flag_regexes:
+        - "^scripts$"
